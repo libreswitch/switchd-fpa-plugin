@@ -1,0 +1,70 @@
+##########################
+# Debugging
+##########################
+
+ipdb==0.9.0
+
+
+##########################
+# Coding standard
+##########################
+
+flake8
+pep8-naming
+
+
+##########################
+# PyTest
+##########################
+
+pytest==2.8.4
+pytest-random
+pytest-xdist
+pytest-timeout
+pytest-logging
+pyyaml==3.11
+# pytest-benchmark
+
+
+##########################
+# Platform engines
+##########################
+
+# Docker
+# topology_docker==1.5.0
+-e git+https://github.com/saenzpa/topology_docker.git@master#egg=topology_docker
+
+
+##########################
+# Support nodes
+##########################
+
+# OpenSwitch support node
+-e git+https://github.com/saenzpa/topology_docker_openswitch.git@master#egg=topology_docker_openswitch
+-e git+https://github.com/saenzpa/topology_docker_oobmhost.git@master#egg=topology_docker_oobmhost
+-e git+https://github.com/HPENetworking/topology_docker_openvswitch.git@master#egg=topology_docker_openvswitch
+-e git+https://github.com/HPENetworking/topology_docker_p4switch.git@master#egg=topology_docker_p4switch
+# Marvell support node
+-e git+ssh://git@bitbucket.org/rzhurak/topology-docker-marvell.git@master#egg=topology_docker_marvellswitch
+
+##########################
+# Communication libraries
+##########################
+
+# vtysh Communication library
+-e git+https://git.openswitch.net/openswitch/ops-topology-lib-vtysh@master#egg=topology_lib_vtysh
+
+# ip command Communication library
+-e git+https://github.com/HPENetworking/topology_lib_ip.git@master#egg=topology_lib_ip
+
+# ping command Communication Library
+-e git+https://github.com/HPENetworking/topology_lib_ping.git@master#egg=topology_lib_ping
+
+# tcpdump command Communication Library
+-e git+https://github.com/HPENetworking/topology_lib_tcpdump.git@master#egg=topology_lib_tcpdump
+
+# sflowtool command Communication Library
+-e git+https://github.com/HPENetworking/topology_lib_sflowtool.git@master#egg=topology_lib_sflowtool
+
+# iperf command Communcation Library
+-e git+https://github.com/HPENetworking/topology_lib_iperf.git@master#egg=topology_lib_iperf

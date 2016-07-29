@@ -1,0 +1,14 @@
+[
+    {
+        "files": ["*"],
+        "modifiers": [
+            {
+                "nodes": ["type=marvellswitch"],
+                "attributes": {
+                    "image": "@TEST_IMAGE@",
+                    "binds": "@TEST_COV_DIR@:@TEST_COV_DIR@"
+                }
+            }
+        ]
+    }
+]
