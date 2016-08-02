@@ -18,6 +18,8 @@
 #include <vlan-bitmap.h>
 #include "ops-fpa.h"
 
+#define OPS_FPA_MAX_IP_PREFIX 32
+
 VLOG_DEFINE_THIS_MODULE(ops_fpa);
 
 const char *
@@ -132,3 +134,38 @@ ops_fpa_str2int(const char *s, int *i)
 
     return 0;
 }
+
+char *
+ops_fpa_ip2str(in_addr_t ipAddr)
+{
+    static char str[16];
+    unsigned char *ip_addr_vec = (unsigned char*)&ipAddr;
+
+    sprintf(str, "%d.%d.%d.%d", ip_addr_vec[0], ip_addr_vec[1], ip_addr_vec[2], ip_addr_vec[3]);
+    return str;
+}
+
+uint32_t ops_fpa_ip4mask_to_prefix_len(in_addr_t ipMask)
+{
+    uint32_t prefixLen;
+
+    prefixLen = (uint32_t)ffs(htonl((int)ipMask));
+    /* if no set bit found - prefixLen remains 0 */
+    if (prefixLen)
+        prefixLen = OPS_FPA_MAX_IP_PREFIX + 1 - prefixLen;
+
+    return prefixLen;
+}
+
+in_addr_t ops_fpa_prefix_len_to_ip4mask(uint32_t prefix)
+{
+    in_addr_t ip = 0;
+    uint32_t i;
+
+    for (i = 0; i < prefix; i++) {
+        ip |= 1<<(31-i);
+    }
+
+    return ip;
+}
+

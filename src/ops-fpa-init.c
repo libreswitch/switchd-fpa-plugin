@@ -16,6 +16,7 @@
 
 #include <unistd.h>
 #include "ops-fpa.h"
+#include "ops-fpa-route.h"
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_init);
 
@@ -40,7 +41,7 @@ ops_fpa_main_start(void *arg)
 void
 ops_fpa_init()
 {
-    int rc;
+    FPA_STATUS status;
     FPA_TRACE_FN();
     ovs_thread_create("fpa_main", &ops_fpa_main_start, NULL);
     while (fpa_init_done != true) {
@@ -50,9 +51,10 @@ ops_fpa_init()
     /* fpa_init_done means fpa_init_almost_done */
     usleep(2000000);
 
-    rc = fpaWrapInitialize();
-    if(FPA_OK != rc) {
-        ovs_abort(EAGAIN, "Error. WrapInitialize returned error code %d ", rc);
+    status = fpaWrapInitialize();
+    if(FPA_OK != status) {
+        ovs_abort(EAGAIN, "Error. WrapInitialize returned error code. Status: %s", ops_fpa_strerr(status));
     }
     system("touch /var/run/fpa-sim-init.done");
 }
+

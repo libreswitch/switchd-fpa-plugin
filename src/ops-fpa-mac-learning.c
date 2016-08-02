@@ -26,10 +26,13 @@
 #include <openvswitch/vlog.h>
 #include "plugin-extensions.h"
 #include "ops-fpa.h"
+#include "ops-fpa-ofproto.h"
 #include "ops-fpa-mac-learning.h"
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_mac_learning);
 
+/* Timeout to wait for all plugin parts to finish init */
+#define ML_DELAY_STARTUP_TIME    5
 /* MAC learning timer timeout in seconds. */
 #define OPS_FPA_ML_TIMER_TIMEOUT 30
 
@@ -219,7 +222,7 @@ ops_fpa_mac_learning_insert(struct fpa_mac_learning *ml, struct fpa_mac_entry *e
     if (hmap_count(&ml->table) >= ml->max_entries) {
         VLOG_WARN_RL(&ml_rl, "%s: Unable to insert entry for VLAN %d "
                              "and MAC: " FPA_ETH_ADDR_FMT
-                             " to the software FDB table. The table is full\n",
+                             " to the software FDB table. The table is full",
                      __FUNCTION__, e->fdb_entry.vid, 
                      FPA_ETH_ADDR_ARGS(e->fdb_entry.address));
         free(e);
@@ -229,7 +232,7 @@ ops_fpa_mac_learning_insert(struct fpa_mac_learning *ml, struct fpa_mac_entry *e
     index = fpa_hash_fdb_entry(&e->fdb_entry);
     hmap_insert(&ml->table, &e->hmap_node, index);
     VLOG_DBG_RL(&ml_rl, "Inserted new entry into ML table: VLAN %d, "
-                        "MAC: " FPA_ETH_ADDR_FMT ", Intf ID: %u, index 0x%lx\n",
+                        "MAC: " FPA_ETH_ADDR_FMT ", Intf ID: %u, index 0x%lx",
                 e->fdb_entry.vid,
                 FPA_ETH_ADDR_ARGS(e->fdb_entry.address),
                 e->fdb_entry.portNum,
@@ -257,22 +260,17 @@ struct fpa_mac_entry *
 ops_fpa_mac_learning_lookup(const struct fpa_mac_learning *ml,
                            FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
 {
-    struct hmap_node *node;
-    struct fpa_mac_entry *s;
+    struct fpa_mac_entry *e;
     uint32_t hash = fpa_hash_fdb_entry(fdb_entry);
 
     ovs_assert(ml);
 
-/*    node = hmap_first_with_hash(&ml->table, hash);
-    if (node) {
-        return CONTAINER_OF(node, struct fpa_mac_entry, hmap_node);
-    }*/
-    for (node = hmap_first_with_hash(&ml->table, hash); node;
-         node = hmap_next_with_hash(node)) {
-        s = CONTAINER_OF(node, struct fpa_mac_entry, hmap_node);
-        if (!memcmp(&s->fdb_entry.address, &fdb_entry->address, sizeof(fdb_entry->address)) &&
-            s->fdb_entry.vid == fdb_entry->vid) {
-            return s;
+    HMAP_FOR_EACH_WITH_HASH(e, hmap_node, hash, &ml->table)
+    {
+        if (!memcmp(&e->fdb_entry.address, &fdb_entry->address, 
+                    sizeof(fdb_entry->address)) &&
+            e->fdb_entry.vid == fdb_entry->vid) {
+            return e;
         }    
     }    
 
@@ -304,10 +302,12 @@ ops_fpa_mac_learning_expire(struct fpa_mac_learning *ml, struct fpa_mac_entry *e
     ovs_assert(ml);
     ovs_assert(e);
 
+    /* FIXME add removing entry from HW */
+
     hmap_remove(&ml->table, &e->hmap_node);
 
     VLOG_DBG_RL(&ml_rl, "Expire entry in ML table: VLAN %d, "
-                        "MAC: " FPA_ETH_ADDR_FMT ", Intf ID: %u, index 0x%lx\n",
+                        "MAC: " FPA_ETH_ADDR_FMT ", Intf ID: %u, index 0x%lx",
                 e->fdb_entry.vid,
                 FPA_ETH_ADDR_ARGS(e->fdb_entry.address),
                 e->fdb_entry.portNum,
@@ -349,7 +349,7 @@ ops_fpa_mac_learning_learn(struct fpa_mac_learning *ml,
     if (!ops_fpa_mac_learning_may_learn(ml, data->address,
                                        data->vid)) {
         VLOG_WARN_RL(&ml_rl, "%s: Either learning is disabled on the VLAN %u"
-                             " or wrong MAC: "FPA_ETH_ADDR_FMT" has to be learned."
+                             " or wrong MAC: "FPA_ETH_ADDR_FMT" has to be learnt."
                              " Skipping.",
                      __FUNCTION__, data->vid,
                      FPA_ETH_ADDR_ARGS(data->address));
@@ -368,7 +368,7 @@ ops_fpa_mac_learning_learn(struct fpa_mac_learning *ml,
 /* Removes entry from the software and hardware FDB tables using its index. */
 int
 ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml, 
-                                        FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
+                                  FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
 {
     struct fpa_mac_entry *e = NULL;
 
@@ -383,12 +383,12 @@ ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml,
     return 0;
 }
 
-    OVS_REQ_WRLOCK(ml->rwlock);
 /* Removes entry from the software and hardware FDB tables using
  * VLAN and MAC. */
 int
 ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
-                                        uint16_t vlan, FPA_MAC_ADDRESS_STC macAddr)
+                                         uint16_t vlan, 
+                                         FPA_MAC_ADDRESS_STC macAddr)
 {
     struct fpa_mac_entry *e = NULL;
 
@@ -401,7 +401,7 @@ ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
     } else {
         VLOG_WARN_RL(&ml_rl, "%s: No entry with VLAN %d "
                              "and MAC: " FPA_ETH_ADDR_FMT
-                             " found in FDB\n",
+                             " found in FDB",
                      __FUNCTION__, vlan,
                      FPA_ETH_ADDR_ARGS(macAddr));
         return EPERM;
@@ -421,6 +421,7 @@ mac_learning_asic_events_handler(void *arg)
 
     ovs_assert(ml);
 
+    sleep(ML_DELAY_STARTUP_TIME);
 
     /* Receiving and processing events loop. */
 /*TODO test
@@ -526,12 +527,21 @@ ops_fpa_mac_learning_mlearn_entry_fill_data(struct fpa_dev *dev,
 
     /*ops_fpa_mac_copy_and_reverse(entry->mac.ea, fdb_entry->address.addr);*/
     memcpy(entry->mac.ea, fdb_entry->address.addr, ETH_ADDR_LEN);
-    entry->port = PORT_CONVERT_FPA2OPS(fdb_entry->portNum); /*TODO: convert*/
+
+    entry->port = fdb_entry->portNum;
     entry->vlan = fdb_entry->vid;
     entry->hw_unit = dev->switchId;
     entry->oper = event;
 
-    snprintf(entry->port_name, PORT_NAME_SIZE, "%u", entry->port);
+    struct ofport_fpa *port = ops_fpa_get_ofport_by_pid(fdb_entry->portNum);
+    if (port) {
+        strncpy(entry->port_name, netdev_get_name(port->up.netdev), 
+                PORT_NAME_SIZE);
+    } else {
+        /* TODO: What should we do if there is no port with the pid? */
+        VLOG_ERR("Can't find a port with pid %d", fdb_entry->portNum);
+        snprintf(entry->port_name, PORT_NAME_SIZE, "%u", entry->port);
+    }
 }
 
 /* Adds the action entry in the mlearn_event_tables hmap.
@@ -590,7 +600,7 @@ ops_fpa_mac_learning_mlearn_action_add(struct fpa_mac_learning *ml,
             hmap_insert(&mhmap->table, &(e->hmap_node), index);
             mhmap->buffer.actual_size++;
         } else {
-            VLOG_ERR("Not able to insert elements in hmap, size is: %u\n",
+            VLOG_ERR("Not able to insert elements in hmap, size is: %u",
                       mhmap->buffer.actual_size);
         }
     }

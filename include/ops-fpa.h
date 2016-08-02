@@ -23,6 +23,18 @@
 #include <fpa/fpaLibApis.h>
 #include <fpa/fpaLibTypes.h>
 #include <ofproto/ofproto.h>
+#include "ops-fpa-wrap.h"
+
+/* TODO: to be remove this include: need enum fpaFlowModFlags->FPA_SEND_FLOW_REM
+ * #include <fpa/fpaLibTypesPrv.h> */
+enum fpaFlowModFlags {
+    FPA_SEND_FLOW_REM   = 1 << 0,  /* Send flow removed message when flow
+                                    * expires or is deleted. */
+    FPA_CHECK_OVERLAP   = 1 << 1,  /* Check for overlapping entries first. */
+    FPA_RESET_COUNTS    = 1 << 2,  /* Reset flow packet and byte counts. */
+    FPA_NO_PKT_COUNTS   = 1 << 3,  /* Don't keep track of packet count. */
+    FPA_NO_BYTE_COUNTS  = 1 << 4,  /* Don't keep track of byte count. */
+};
 
 #define FPA_TRACE_FN() VLOG_INFO(__FUNCTION__)
 
@@ -34,10 +46,14 @@
 #define FPA_ETH_ADDR_ARGS(mac) \
         (mac.addr)[0], (mac.addr)[1], (mac.addr)[2], (mac.addr)[3], (mac.addr)[4], (mac.addr)[5]
 
-/* TODO: This is a temporary solution. We need to come up with something more 
- * flexible. */
-#define PORT_CONVERT_FPA2OPS(port)    (port+1)
-#define PORT_CONVERT_OPS2FPA(port)    (port>0?(port-1):0)
+#define FPA_DEV_SWITCH_ID_DEFAULT         0 /* FPA plugin supports only one 
+                                               switch device now */
+#define FPA_VLAN_1                        1 /* Default VLAN ID */
+#define FPA_VLAN_MAX_COUNT             4096 /* Maximum supported number of 
+                                               VLAN IDs */
+
+#define FPA_INVALID_SWITCH_ID        0xffff
+#define FPA_INVALID_INTF_ID          0xffff 
 
 void ops_fpa_init();
 int ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out);
@@ -53,8 +69,15 @@ const char * ops_fpa_str_vlan_mode(int vlan_mode);
 const char * ops_fpa_str_trunks(unsigned long *trunks);
 const char * ops_fpa_str_ports(ofp_port_t *ports, size_t size);
 
-struct netdev;
-/* get netdev port id */
-int ops_fpa_netdev_pid(struct netdev *dev);
+char *ops_fpa_ip2str(in_addr_t ipAddr);
+uint32_t ops_fpa_ip4mask_to_prefix_len(in_addr_t ipMask);
+in_addr_t ops_fpa_prefix_len_to_ip4mask(uint32_t prefix);
+
+#define                FPA_HAL_L3_DEFAULT_VRID         0
+
+/* Returns pointer to struct ofport_fpa for a switch interface with a given 
+ * pid. */
+struct ofport_fpa *ops_fpa_get_ofport_by_pid(int pid);
 
 #endif /* ops-fpa.h */
+

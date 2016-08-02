@@ -19,7 +19,9 @@
 #include <ofp-parse.h>
 #include <openswitch-idl.h>
 #include <openswitch-dflt.h>
+#include <netinet/ether.h>
 #include "ops-fpa.h"
+#include "ops-fpa-tap.h"
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_netdev);
 
@@ -27,12 +29,29 @@ struct netdev_fpa {
     struct netdev up;
     struct ovs_mutex mutex;
 
+    /* netdev_list */
+    struct ovs_list list_node; 
+
     int sid; /* switch id */
     int pid; /* port id */
     struct eth_addr mac; /* MAC address */
 
     bool inited;
+
+    bool link_status;
+    long long link_resets;
+
+    int tap_fd;
+
+    /* For virtual interfaces we have no sid/pid and thus can't access flags 
+     * via FPA calls. */
+    enum netdev_flags flags; 
 };
+
+/* Forward declaration of netdev's classes. */
+static struct netdev_class netdev_fpa_system;
+static struct netdev_class netdev_fpa_internal;
+static struct netdev_class netdev_fpa_vlansubint;
 
 static struct netdev_fpa *
 ops_fpa_netdev_cast(const struct netdev *dev)
@@ -51,6 +70,33 @@ static void
 ops_fpa_netdev_run(void)
 {
     //FPA_TRACE_FN();
+    struct shash devices;
+    struct shash_node *node;
+
+    shash_init(&devices);
+    netdev_get_devices(&netdev_fpa_system, &devices);
+    SHASH_FOR_EACH (node, &devices) {
+        struct netdev *netdev_ = node->data;
+        struct netdev_fpa *netdev = ops_fpa_netdev_cast(netdev_);
+
+        FPA_PORT_PROPERTIES_STC props = {
+            .flags = FPA_PORT_PROPERTIES_CONFIG_FLAG,
+            .config = 0
+        };
+
+        int err = fpaLibPortPropertiesGet(netdev->sid, netdev->pid, &props);
+        if (err) {
+            VLOG_ERR("fpaLibPortPropertiesGet: %s", ops_fpa_strerr(err));
+            continue;
+        }
+
+        bool status = props.config & FPA_PORT_CONFIG_DOWN ? false : true;
+        if (status != netdev->link_status) {
+            netdev->link_status = status;
+            if (status) netdev->link_resets++;
+            netdev_change_seq_changed(&netdev->up);
+        }
+    }
 }
 
 static void
@@ -78,15 +124,32 @@ ops_fpa_netdev_dealloc(struct netdev *up)
 static int
 ops_fpa_netdev_construct(struct netdev *up)
 {
-    //FPA_TRACE_FN();
-    VLOG_INFO("ops_fpa_netdev_construct<%s,%s>:", up->netdev_class->type, up->name);
+    static atomic_count next_n = ATOMIC_COUNT_INIT(0xaa550000);
+    unsigned int n;
     struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
 
+    //FPA_TRACE_FN();
+    VLOG_INFO("ops_fpa_netdev_construct<%s,%s>:", up->netdev_class->type, up->name);
+
     ovs_mutex_init(&dev->mutex);
-    dev->sid = -1;
-    dev->pid = -1;
-    memset(&dev->mac, 0xFF, sizeof(dev->mac));
+    dev->sid = FPA_INVALID_SWITCH_ID;
+    dev->pid = FPA_INVALID_INTF_ID;
+
+    n = atomic_count_inc(&next_n);
+    dev->mac.ea[0] = 0xaa;
+    dev->mac.ea[1] = 0x55;
+    dev->mac.ea[2] = n >> 24;
+    dev->mac.ea[3] = n >> 16;
+    dev->mac.ea[4] = n >> 8;
+    dev->mac.ea[5] = n;
+
     dev->inited = false;
+
+    dev->link_status = false;
+    dev->link_resets = 0;
+    dev->flags = 0;
+
+    dev->tap_fd = 0;
 
     return 0;
 }
@@ -94,8 +157,18 @@ ops_fpa_netdev_construct(struct netdev *up)
 static void
 ops_fpa_netdev_destruct(struct netdev *up)
 {
+    int ret;
+
     FPA_TRACE_FN();
     struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+
+    if (dev->tap_fd) {
+        ret = ops_fpa_tap_if_delete(dev->sid, dev->tap_fd);
+        if (ret) {
+            VLOG_ERR("Failed to delete TAP interface: %s", dev->up.name);
+        }
+    }
+
     ovs_mutex_destroy(&dev->mutex);
 }
 
@@ -113,13 +186,6 @@ ops_fpa_netdev_set_config(struct netdev *up, const struct smap *args)
     return 0;
 }
 
-int
-ops_fpa_netdev_pid(struct netdev *up)
-{
-    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
-    return dev->pid;
-}
-
 static int
 ops_fpa_netdev_set_hw_intf_info(struct netdev *up, const struct smap *args)
 {
@@ -135,17 +201,21 @@ ops_fpa_netdev_set_hw_intf_info(struct netdev *up, const struct smap *args)
 
     if (!dev->inited) {
         if (STR_EQ(up->netdev_class->type, "system")) {
+            int ret;
+
             const char *sid = smap_get(args, INTERFACE_HW_INTF_INFO_MAP_SWITCH_UNIT);
             if (ops_fpa_str2int(sid, &dev->sid)) {
                 VLOG_ERR("bad %s: %s", INTERFACE_HW_INTF_INFO_MAP_SWITCH_UNIT, sid);
                 goto error;
             }
+            ovs_assert(dev->sid>=0);
 
             const char *pid = smap_get(args, INTERFACE_HW_INTF_INFO_MAP_SWITCH_INTF_ID);
             if (ops_fpa_str2int(pid, &dev->pid)) {
                 VLOG_ERR("bad %s: %s", INTERFACE_HW_INTF_INFO_MAP_SWITCH_INTF_ID, pid);
                 goto error;
             }
+            ovs_assert(dev->pid>=0);
 
             const char *mac = smap_get(args, INTERFACE_HW_INTF_INFO_MAP_MAC_ADDR);
             if (mac) {
@@ -156,10 +226,15 @@ ops_fpa_netdev_set_hw_intf_info(struct netdev *up, const struct smap *args)
                     goto error;
                 }
             }
-        } else if (STR_EQ(up->netdev_class->type, "internal")) {
-            //bool bridge = smap_get_bool(args, INTERFACE_HW_INTF_INFO_MAP_BRIDGE, DFLT_INTERFACE_HW_INTF_INFO_MAP_BRIDGE);
+
+            ret = ops_fpa_tap_if_create(dev->sid, dev->pid, up->name, 
+                                        ether_aton(mac), &dev->tap_fd);
+            if (ret) {
+                VLOG_ERR("Failed to create TAP interface: %s", dev->up.name);
+                goto error;
+            }
         } else {
-            VLOG_ERR("unknown netdev class type: %s", up->netdev_class->type);
+            VLOG_ERR("Unknown netdev class type: %s", up->netdev_class->type);
         }
 
         dev->inited = true;
@@ -246,8 +321,7 @@ ops_fpa_netdev_set_hw_intf_config(struct netdev *up, const struct smap *args)
 
     /* Get the bimap of supported features. */
     props.flags = FPA_PORT_PROPERTIES_SUPPORTED_FLAG;
-    int err = fpaLibPortPropertiesGet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                      &props);
+    int err = fpaLibPortPropertiesGet(dev->sid, dev->pid, &props);
     if (err) {
         VLOG_ERR("fpaLibPortPropertiesGet: %s", ops_fpa_strerr(err));
         return EINVAL;
@@ -266,14 +340,17 @@ ops_fpa_netdev_set_hw_intf_config(struct netdev *up, const struct smap *args)
         /* Set features only if they are present */
         if (props.featuresBmp != 0) 
             props.flags |= FPA_PORT_PROPERTIES_FEATURES_FLAG;
+
+        dev->flags = NETDEV_UP;
     } else {
         /* Features are absent when interface goes shutdown */
         props.flags = FPA_PORT_PROPERTIES_CONFIG_FLAG;
         props.config = FPA_PORT_CONFIG_DOWN;
+
+        dev->flags = 0;
     }
 
-    err = fpaLibPortPropertiesSet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                  &props);
+    err = fpaLibPortPropertiesSet(dev->sid, dev->pid, &props);
     if (err) {
         VLOG_ERR("fpaLibPortPropertiesSet: %s", ops_fpa_strerr(err));
     }
@@ -339,9 +416,20 @@ ops_fpa_netdev_send_wait(struct netdev *up, int qid)
 static int
 ops_fpa_netdev_set_etheraddr(struct netdev *up, const struct eth_addr mac)
 {
-    char str[18];
-    snprintf(str, sizeof(str), "%02X:%02X:%02X:%02X:%02X:%02X", mac.ea[0], mac.ea[1], mac.ea[2], mac.ea[3], mac.ea[4], mac.ea[5]);
-    VLOG_INFO("ops_fpa_netdev_set_etheraddr<%s,%s>: mac=%s", up->netdev_class->type, up->name, str);
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+
+    ovs_mutex_lock(&dev->mutex);
+
+    if (memcmp(dev->mac.ea, mac.ea, ETH_ADDR_LEN)) {
+        VLOG_INFO("%s<%s,%s>: mac="ETH_ADDR_FMT, 
+                  __FUNCTION__, netdev_get_type(up), 
+                  netdev_get_name(up), ETH_ADDR_ARGS(mac));
+        memcpy(dev->mac.ea, mac.ea, ETH_ADDR_LEN);
+        netdev_change_seq_changed(up);
+    }
+
+    ovs_mutex_unlock(&dev->mutex);
+
     return 0;
 }
 
@@ -374,14 +462,16 @@ ops_fpa_netdev_set_mtu(const struct netdev *up, int mtu)
 static int
 ops_fpa_netdev_get_ifindex(const struct netdev *up)
 {
-    FPA_TRACE_FN();
-    return 0;
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+    return dev->pid;
 }
 
 static int
 ops_fpa_netdev_get_carrier(const struct netdev *up, bool *carrier)
 {
-    FPA_TRACE_FN();
+    //FPA_TRACE_FN();
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+    *carrier = dev->link_status;
     return 0;
 }
 
@@ -389,7 +479,8 @@ static long long int
 ops_fpa_netdev_get_carrier_resets(const struct netdev *up)
 {
     //FPA_TRACE_FN();
-    return 0;
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+    return dev->link_resets;
 }
 
 static int
@@ -413,7 +504,7 @@ ops_fpa_netdev_get_stats(const struct netdev *up, struct netdev_stats *stats)
     }
 
     FPA_PORT_COUNTERS_STC counters;
-    int err = fpaLibPortStatisticsGet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
+    int err = fpaLibPortStatisticsGet(dev->sid, dev->pid, 
                                       &counters);
     if (err) {
         VLOG_ERR("fpaLibPortStatisticsGet: %s", ops_fpa_strerr(err));
@@ -502,8 +593,7 @@ ops_fpa_netdev_get_features(const struct netdev *up,
     struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
     FPA_PORT_PROPERTIES_STC props;
 
-    int err = fpaLibPortPropertiesGet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                      &props);
+    int err = fpaLibPortPropertiesGet(dev->sid, dev->pid, &props);
     if (err) {
         VLOG_ERR("fpaLibPortPropertiesGet: %s", ops_fpa_strerr(err));
         return EINVAL;
@@ -531,8 +621,7 @@ ops_fpa_netdev_set_advertisements(struct netdev *up, enum netdev_features advert
         .advertBmp = netdev_to_fpa_features(advertise)
     };
 
-    int err = fpaLibPortPropertiesSet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                      &props);
+    int err = fpaLibPortPropertiesSet(dev->sid, dev->pid, &props);
     if (err) {
         VLOG_ERR("fpaLibPortPropertiesSet: %s", ops_fpa_strerr(err));
     }
@@ -687,21 +776,10 @@ ops_fpa_netdev_update_flags(struct netdev *up, enum netdev_flags off,
     //FPA_TRACE_FN();
     struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
 
-    if (on == off                   /* No changes */
-        || dev->sid < 0             /* Hardware interface is uninitialized */
-        || (on | off) & ~NETDEV_UP) /* We support only NETDEV_UP */
-    {
+    /* It must be a real interface. */
+    if (dev->sid == FPA_INVALID_SWITCH_ID) {
         return EOPNOTSUPP;
     }
-
-    VLOG_INFO("ops_fpa_netdev_update_flags<%s,%s>:", up->netdev_class->type,
-              up->name);
-    VLOG_INFO("    off: %s%s%s", off & NETDEV_UP       ? "UP"        : "",
-                                 off & NETDEV_PROMISC  ? " PROMISC"  : "",
-                                 off & NETDEV_LOOPBACK ? " LOOPBACK" : "");
-    VLOG_INFO("     on: %s%s%s", on & NETDEV_UP        ? "UP"        : "",
-                                 on & NETDEV_PROMISC   ? " PROMISC"  : "",
-                                 on & NETDEV_LOOPBACK  ? " LOOPBACK" : "");
 
     FPA_PORT_PROPERTIES_STC props = {
         .flags = FPA_PORT_PROPERTIES_CONFIG_FLAG,
@@ -709,30 +787,30 @@ ops_fpa_netdev_update_flags(struct netdev *up, enum netdev_flags off,
     };
 
     /* Get the current state to update old flags */
-    int err = fpaLibPortPropertiesGet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                      &props);
+    int err = fpaLibPortPropertiesGet(dev->sid, dev->pid, &props);
     if (err) {
         VLOG_ERR("fpaLibPortPropertiesGet: %s", ops_fpa_strerr(err));
         return EINVAL;
     }
 
     bool down = props.config & FPA_PORT_CONFIG_DOWN;
-    VLOG_INFO("fpaLibPortPropertiesGet: down=%d config=%d flags=%d state=%d", 
+    VLOG_DBG("fpaLibPortPropertiesGet: down=%d config=%d flags=%d state=%d", 
               down, props.config, props.flags, props.state);
     *old_flags = down ? 0 : NETDEV_UP;
 
-    /* Set the new state */
-    if (on & NETDEV_UP) {
-        props.config &= ~FPA_PORT_CONFIG_DOWN;
-    } else if (off & NETDEV_UP) {
-        props.config |= FPA_PORT_CONFIG_DOWN;
-    }
+    /* We support only NETDEV_UP */
+    if ((on | off) & NETDEV_UP) {
+        if (on & NETDEV_UP) {
+            props.config &= ~FPA_PORT_CONFIG_DOWN;
+        } else if (off & NETDEV_UP) {
+            props.config |= FPA_PORT_CONFIG_DOWN;
+        }
 
-    err = fpaLibPortPropertiesSet(dev->sid, PORT_CONVERT_OPS2FPA(dev->pid), 
-                                  &props);
-    if (err) {
-        VLOG_ERR("fpaLibPortPropertiesSet: %s", ops_fpa_strerr(err));
-        return EINVAL;
+        err = fpaLibPortPropertiesSet(dev->sid, dev->pid, &props);
+        if (err) {
+            VLOG_ERR("fpaLibPortPropertiesSet: %s", ops_fpa_strerr(err));
+            return EINVAL;
+        }
     }
 
     return 0;
@@ -787,7 +865,7 @@ ops_fpa_netdev_rxq_drain(struct netdev_rxq *rx)
 static struct netdev_class netdev_fpa_system = {
     .type                 = "system",
     .init                 = NULL,//ops_fpa_netdev_init,
-    .run                  = NULL,//ops_fpa_netdev_run,
+    .run                  = ops_fpa_netdev_run,
     .wait                 = NULL,//ops_fpa_netdev_wait,
     .alloc                = ops_fpa_netdev_alloc,
     .construct            = ops_fpa_netdev_construct,
@@ -809,9 +887,9 @@ static struct netdev_class netdev_fpa_system = {
     .get_etheraddr        = ops_fpa_netdev_get_etheraddr,
     .get_mtu              = NULL,//ops_fpa_netdev_get_mtu,
     .set_mtu              = NULL,//ops_fpa_netdev_set_mtu,
-    .get_ifindex          = NULL,//ops_fpa_netdev_get_ifindex,
-    .get_carrier          = NULL,//ops_fpa_netdev_get_carrier,
-    .get_carrier_resets   = NULL,//ops_fpa_netdev_get_carrier_resets,
+    .get_ifindex          = ops_fpa_netdev_get_ifindex,
+    .get_carrier          = ops_fpa_netdev_get_carrier,
+    .get_carrier_resets   = ops_fpa_netdev_get_carrier_resets,
     .set_miimon_interval  = NULL,//ops_fpa_netdev_set_miimon_interval,
     .get_stats            = ops_fpa_netdev_get_stats,
     .get_features         = ops_fpa_netdev_get_features,
@@ -846,6 +924,88 @@ static struct netdev_class netdev_fpa_system = {
     .rxq_drain            = NULL,//ops_fpa_netdev_rxq_drain
 };
 
+static int
+internal_netdev_set_hw_intf_info(struct netdev *up, const struct smap *args)
+{
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+
+    VLOG_INFO("%s<%s,%s>", __func__, up->name, up->netdev_class->type);
+
+    struct smap_node *node;
+    SMAP_FOR_EACH (node, args) {
+        VLOG_INFO("    key=%s, value=%s", node->key, node->value);
+    }
+    
+    ovs_mutex_lock(&dev->mutex);
+    if (!dev->inited) {
+
+        bool is_bridge_interface = smap_get_bool(args, INTERFACE_HW_INTF_INFO_MAP_BRIDGE, 
+                                                 DFLT_INTERFACE_HW_INTF_INFO_MAP_BRIDGE);
+
+        if(is_bridge_interface) {
+            int ret = 0;
+            struct ether_addr *ether_mac = NULL;
+
+            ether_mac = (struct ether_addr *) &dev->mac;
+            ret = ops_fpa_tap_if_create(FPA_DEV_SWITCH_ID_DEFAULT, FPA_INVALID_INTF_ID, /*HACK need valid switchId for finding fpa_dev object */
+                                        up->name, ether_mac, &dev->tap_fd);
+            if (ret) {
+                VLOG_ERR("Failed to initialize interface %s", dev->up.name);
+                goto error;
+            }
+        }
+
+        dev->inited = true;
+    }
+    ovs_mutex_unlock(&dev->mutex);
+    
+    return 0;
+
+error:
+    ovs_mutex_unlock(&dev->mutex);
+
+    return EINVAL;
+}
+
+static int
+internal_netdev_set_hw_intf_config(struct netdev *up, const struct smap *args)
+{
+    FPA_TRACE_FN();
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+
+    VLOG_INFO("%s<%s,%s>:", __func__, up->netdev_class->type, up->name);
+
+    struct smap_node *node;
+    SMAP_FOR_EACH(node, args) {
+        VLOG_INFO("    key=%s, value=%s", node->key, node->value);
+    }
+
+    if (!dev->inited) {
+        VLOG_WARN("netdev interface %s is not initialized.", up->name);
+        return EPERM;
+    }
+
+    bool enable = smap_get_bool(args, INTERFACE_HW_INTF_CONFIG_MAP_ENABLE, false);
+
+    ovs_mutex_lock(&dev->mutex);
+    dev->flags = (enable) ? NETDEV_UP : 0;
+    ovs_mutex_unlock(&dev->mutex);
+
+    netdev_change_seq_changed(up);
+    return 0;
+}
+
+static int
+internal_netdev_update_flags(struct netdev *up, enum netdev_flags off,
+                             enum netdev_flags on, enum netdev_flags *old_flags)
+{
+    struct netdev_fpa *dev = ops_fpa_netdev_cast(up);
+
+    /* Ignore flags on/off, just return current flags. */
+    *old_flags = dev->flags;
+    return 0;
+}
+
 static struct netdev_class netdev_fpa_internal = {
     .type                 = "internal",
     .init                 = NULL,
@@ -857,8 +1017,8 @@ static struct netdev_class netdev_fpa_internal = {
     .dealloc              = ops_fpa_netdev_dealloc,
     .get_config           = NULL,
     .set_config           = NULL,
-    .set_hw_intf_info     = ops_fpa_netdev_set_hw_intf_info,
-    .set_hw_intf_config   = ops_fpa_netdev_set_hw_intf_config,
+    .set_hw_intf_info     = internal_netdev_set_hw_intf_info,
+    .set_hw_intf_config   = internal_netdev_set_hw_intf_config,
     .get_tunnel_config    = NULL,
     .build_header         = NULL,
     .push_header          = NULL,
@@ -871,8 +1031,8 @@ static struct netdev_class netdev_fpa_internal = {
     .get_etheraddr        = ops_fpa_netdev_get_etheraddr,
     .get_mtu              = NULL,
     .set_mtu              = NULL,
-    .get_ifindex          = NULL,
-    .get_carrier          = ops_fpa_netdev_get_carrier,
+    .get_ifindex          = ops_fpa_netdev_get_ifindex,
+    .get_carrier          = NULL,//ops_fpa_netdev_get_carrier,
     .get_carrier_resets   = NULL,
     .set_miimon_interval  = NULL,
     .get_stats            = NULL,//ops_fpa_netdev_get_stats,
@@ -898,7 +1058,7 @@ static struct netdev_class netdev_fpa_internal = {
     .get_next_hop         = NULL,
     .get_status           = NULL,
     .arp_lookup           = NULL,
-    .update_flags         = ops_fpa_netdev_update_flags,
+    .update_flags         = internal_netdev_update_flags,
     .rxq_alloc            = NULL,
     .rxq_construct        = NULL,
     .rxq_destruct         = NULL,
@@ -970,10 +1130,74 @@ static struct netdev_class netdev_fpa_vlansubint = {
     .rxq_drain            = NULL
 };
 
+static struct netdev_class netdev_fpa_l3_loopback = {
+    .type                 = "loopback",
+    .init                 = NULL,
+    .run                  = NULL,
+    .wait                 = NULL,
+    .alloc                = ops_fpa_netdev_alloc,
+    .construct            = ops_fpa_netdev_construct,
+    .destruct             = ops_fpa_netdev_destruct,
+    .dealloc              = ops_fpa_netdev_dealloc,
+    .get_config           = NULL,
+    .set_config           = NULL,
+    .set_hw_intf_info     = NULL,
+    .set_hw_intf_config   = NULL,
+    .get_tunnel_config    = NULL,
+    .build_header         = NULL,
+    .push_header          = NULL,
+    .pop_header           = NULL,
+    .get_numa_id          = NULL,
+    .set_multiq           = NULL,
+    .send                 = NULL,
+    .send_wait            = NULL,
+    .set_etheraddr        = ops_fpa_netdev_set_etheraddr,
+    .get_etheraddr        = ops_fpa_netdev_get_etheraddr,
+    .get_mtu              = NULL,
+    .set_mtu              = NULL,
+    .get_ifindex          = NULL,
+    .get_carrier          = NULL,
+    .get_carrier_resets   = NULL,
+    .set_miimon_interval  = NULL,
+    .get_stats            = NULL,
+    .get_features         = NULL,
+    .set_advertisements   = NULL,
+    .set_policing         = NULL,
+    .get_qos_types        = NULL,
+    .get_qos_capabilities = NULL,
+    .get_qos              = NULL,
+    .set_qos              = NULL,
+    .get_queue            = NULL,
+    .set_queue            = NULL,
+    .delete_queue         = NULL,
+    .get_queue_stats      = NULL,
+    .queue_dump_start     = NULL,
+    .queue_dump_next      = NULL,
+    .queue_dump_done      = NULL,
+    .dump_queue_stats     = NULL,
+    .get_in4              = NULL,
+    .set_in4              = NULL,
+    .get_in6              = NULL,
+    .add_router           = NULL,
+    .get_next_hop         = NULL,
+    .get_status           = NULL,
+    .arp_lookup           = NULL,
+    .update_flags         = internal_netdev_update_flags,
+    .rxq_alloc            = NULL,
+    .rxq_construct        = NULL,
+    .rxq_destruct         = NULL,
+    .rxq_dealloc          = NULL,
+    .rxq_recv             = NULL,
+    .rxq_wait             = NULL,
+    .rxq_drain            = NULL
+};
+
 void
 netdev_register(void)
 {
     netdev_register_provider(&netdev_fpa_system);
     netdev_register_provider(&netdev_fpa_internal);
     netdev_register_provider(&netdev_fpa_vlansubint);
+    netdev_register_provider(&netdev_fpa_l3_loopback);
 }
+
