@@ -106,7 +106,7 @@ ops_fpa_ofproto_init(const struct shash *iface_hints)
     ops_fpa_init();
 
     /* Perform L3 logic initialization. */
-    l3_index_resource = marvell_ops_utils_resource_init(MARVELL_FPA_NH);
+    l3_index_resource = ops_marvell_utils_resource_init(MARVELL_FPA_NH);
     assert(l3_index_resource != NULL);
     hmap_init(&host_table);
 }
@@ -272,7 +272,9 @@ ops_fpa_ofproto_flush(struct ofproto *up)
 }
 
 static void
-ops_fpa_ofproto_query_tables(struct ofproto *up, struct ofputil_table_features *features, struct ofputil_table_stats *stats)
+ops_fpa_ofproto_query_tables(struct ofproto *up,
+                             struct ofputil_table_features *features,
+                             struct ofputil_table_stats *stats)
 {
     FPA_TRACE_FN();
 }
@@ -304,7 +306,8 @@ ops_fpa_ofproto_port_dealloc(struct ofport *up)
 static int
 ops_fpa_ofproto_port_construct(struct ofport *up)
 {
-    VLOG_INFO("ops_fpa_ofproto_port_construct<%s,%s>: ofp_port=%d", up->ofproto->type, up->ofproto->name, up->ofp_port);
+    VLOG_INFO("ops_fpa_ofproto_port_construct<%s,%s>: ofp_port=%d",
+              up->ofproto->type, up->ofproto->name, up->ofp_port);
     return 0;
 }
 
@@ -321,13 +324,16 @@ ops_fpa_ofproto_port_modified(struct ofport *up)
 }
 
 static void
-ops_fpa_ofproto_port_reconfigured(struct ofport *port, enum ofputil_port_config old_config)
+ops_fpa_ofproto_port_reconfigured(struct ofport *port,
+                                  enum ofputil_port_config old_config)
 {
     FPA_TRACE_FN();
 }
 
 static int
-ops_fpa_ofproto_port_query_by_name(const struct ofproto *up, const char *devname, struct ofproto_port *port)
+ops_fpa_ofproto_port_query_by_name(const struct ofproto *up,
+                                   const char *devname,
+                                   struct ofproto_port *port)
 {
     //VLOG_INFO("ops_fpa_ofproto_port_query_by_name<%s,%s>: devname=%s", up->type, up->name, devname);
 
@@ -353,7 +359,8 @@ ops_fpa_ofproto_port_add(struct ofproto *up, struct netdev *dev)
 {
     const char *devname = netdev_get_name(dev);
 
-    VLOG_INFO("ops_fpa_ofproto_port_add<%s,%s>: devname=%s", up->type, up->name, devname);
+    VLOG_INFO("ops_fpa_ofproto_port_add<%s,%s>: devname=%s", up->type, up->name,
+              devname);
 
     struct ofproto_fpa *p = ops_fpa_proto_cast(up);
     sset_add(&p->port_names, devname);
@@ -379,7 +386,8 @@ ops_fpa_ofproto_port_del(struct ofproto *up, ofp_port_t ofp_port)
 }
 
 static int
-ops_fpa_ofproto_port_get_stats(const struct ofport *port, struct netdev_stats *stats)
+ops_fpa_ofproto_port_get_stats(const struct ofport *port,
+                               struct netdev_stats *stats)
 {
     FPA_TRACE_FN();
 
@@ -395,7 +403,8 @@ ops_fpa_ofproto_port_dump_start(const struct ofproto *up, void **statep)
 }
 
 static int
-ops_fpa_ofproto_port_dump_next(const struct ofproto *up, void *state, struct ofproto_port *port)
+ops_fpa_ofproto_port_dump_next(const struct ofproto *up, void *state,
+                               struct ofproto_port *port)
 {
     struct ofproto_fpa *p = ops_fpa_proto_cast(up);
     struct port_iter *iter = state;
@@ -403,7 +412,8 @@ ops_fpa_ofproto_port_dump_next(const struct ofproto *up, void *state, struct ofp
 
     //VLOG_INFO("ops_fpa_ofproto_port_dump_next:  type=%s name=%s bucket=%d offset=%d", up->type, up->name, iter->bucket, iter->offset);
 
-    while ((node = sset_at_position(&p->port_names, &iter->bucket, &iter->offset))) {
+    while ((node = sset_at_position(&p->port_names, &iter->bucket,
+                                    &iter->offset))) {
         return ops_fpa_ofproto_port_query_by_name(up, node->name, port);
     }
 
@@ -413,7 +423,8 @@ ops_fpa_ofproto_port_dump_next(const struct ofproto *up, void *state, struct ofp
 static int
 ops_fpa_ofproto_port_dump_done(const struct ofproto *up, void *state)
 {
-    //VLOG_INFO("ops_fpa_ofproto_port_dump_done:  type=%s name=%s", up->type, up->name);
+    /*VLOG_INFO("ops_fpa_ofproto_port_dump_done:
+                type=%s name=%s", up->type, up->name);*/
     free(state);
     return 0;
 }
@@ -438,14 +449,16 @@ ops_fpa_ofproto_port_is_lacp_current(const struct ofport *port)
 }
 
 static int
-ops_fpa_ofproto_port_get_lacp_stats(const struct ofport *port, struct lacp_slave_stats *stats)
+ops_fpa_ofproto_port_get_lacp_stats(const struct ofport *port,
+                                    struct lacp_slave_stats *stats)
 {
     FPA_TRACE_FN();
     return 0;
 }
 
 static enum ofperr
-ops_fpa_ofproto_rule_choose_table(const struct ofproto *up, const struct match *match, uint8_t *table_idp)
+ops_fpa_ofproto_rule_choose_table(const struct ofproto *up,
+                                  const struct match *match, uint8_t *table_idp)
 {
     FPA_TRACE_FN();
     return OFPERR_OFS;
@@ -491,7 +504,8 @@ ops_fpa_ofproto_rule_destruct(struct rule *rule)
 }
 
 static void
-ops_fpa_ofproto_rule_insert(struct rule *rule, struct rule *old_rule, bool forward_stats)
+ops_fpa_ofproto_rule_insert(struct rule *rule, struct rule *old_rule,
+                            bool forward_stats)
 {
     FPA_TRACE_FN();
 }
@@ -503,12 +517,14 @@ ops_fpa_ofproto_rule_delete(struct rule *rule)
 }
 
 static void
-ops_fpa_ofproto_rule_get_stats(struct rule *up, uint64_t *packet_count, uint64_t *byte_count, long long int *used)
+ops_fpa_ofproto_rule_get_stats(struct rule *up, uint64_t *packet_count,
+                               uint64_t *byte_count, long long int *used)
 {
     FPA_TRACE_FN();
     FPA_FLOW_ENTRY_COUNTERS_STC counters;
     struct ofrule_fpa *r = ops_fpa_rule_cast(up);
-    int err = fpaLibFlowEntryStatisticsGet(0, up->table_id, &r->entry, &counters);
+    int err = fpaLibFlowEntryStatisticsGet(0, up->table_id, &r->entry,
+                                           &counters);
     if (err) {
         VLOG_ERR("fpaLibFlowEntryStatisticsGet: %s", ops_fpa_strerr(err));
         return;
@@ -520,21 +536,25 @@ ops_fpa_ofproto_rule_get_stats(struct rule *up, uint64_t *packet_count, uint64_t
 }
 
 static enum ofperr
-ops_fpa_ofproto_rule_execute(struct rule *rule, const struct flow *flow, struct dp_packet *packet)
+ops_fpa_ofproto_rule_execute(struct rule *rule, const struct flow *flow,
+                             struct dp_packet *packet)
 {
     FPA_TRACE_FN();
     return OFPERR_OFS;
 }
 
 static bool
-ops_fpa_ofproto_set_frag_handling(struct ofproto *up, enum ofp_config_flags frag_handling)
+ops_fpa_ofproto_set_frag_handling(struct ofproto *up,
+                                  enum ofp_config_flags frag_handling)
 {
     FPA_TRACE_FN();
     return false;
 }
 
 static enum ofperr
-ops_fpa_ofproto_packet_out(struct ofproto *up, struct dp_packet *packet, const struct flow *flow, const struct ofpact *ofpacts, size_t ofpacts_len)
+ops_fpa_ofproto_packet_out(struct ofproto *up, struct dp_packet *packet,
+                           const struct flow *flow,
+                           const struct ofpact *ofpacts, size_t ofpacts_len)
 {
     FPA_TRACE_FN();
     return OFPERR_OFS;
@@ -545,20 +565,23 @@ ops_fpa_ofproto_packet_out(struct ofproto *up, struct dp_packet *packet, const s
  */
 #if 0
 static int
-ops_fpa_ofproto_set_netflow(struct ofproto *up, const struct netflow_options *netflow_options)
+ops_fpa_ofproto_set_netflow(struct ofproto *up,
+                            const struct netflow_options *netflow_options)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
 }
 
 static void
-ops_fpa_ofproto_get_netflow_ids(const struct ofproto *up, uint8_t *engine_type, uint8_t *engine_id)
+ops_fpa_ofproto_get_netflow_ids(const struct ofproto *up, uint8_t *engine_type,
+                                uint8_t *engine_id)
 {
     FPA_TRACE_FN();
 }
 
 static int
-ops_fpa_ofproto_set_sflow(struct ofproto *up, const struct ofproto_sflow_options *sflow_options)
+ops_fpa_ofproto_set_sflow(struct ofproto *up,
+                          const struct ofproto_sflow_options *sflow_options)
 {
     return EOPNOTSUPP;
 }
@@ -585,7 +608,8 @@ ops_fpa_ofproto_cfm_status_changed(struct ofport *port)
 }
 
 static int
-ops_fpa_ofproto_get_cfm_status(const struct ofport *port, struct cfm_status *status)
+ops_fpa_ofproto_get_cfm_status(const struct ofport *port,
+                               struct cfm_status *status)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
@@ -599,7 +623,8 @@ ops_fpa_ofproto_set_lldp(struct ofport *port, const struct smap *cfg)
 }
 
 static bool
-ops_fpa_ofproto_get_lldp_status(const struct ofport *port, struct lldp_status *status)
+ops_fpa_ofproto_get_lldp_status(const struct ofport *port,
+                                struct lldp_status *status)
 {
     FPA_TRACE_FN();
     return false;
@@ -613,7 +638,8 @@ ops_fpa_ofproto_set_aa(struct ofproto *up, const struct aa_settings *s)
 }
 
 static int
-ops_fpa_ofproto_aa_mapping_set(struct ofproto *up, void *aux, const struct aa_mapping_settings *s)
+ops_fpa_ofproto_aa_mapping_set(struct ofproto *up, void *aux,
+                               const struct aa_mapping_settings *s)
 {
     FPA_TRACE_FN();
     return 0;
@@ -662,7 +688,8 @@ ops_fpa_ofproto_get_bfd_status(struct ofport *port, struct smap *smap)
 }
 
 static int
-ops_fpa_ofproto_set_stp(struct ofproto *up, const struct ofproto_stp_settings *s)
+ops_fpa_ofproto_set_stp(struct ofproto *up,
+                        const struct ofproto_stp_settings *s)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
@@ -676,52 +703,61 @@ ops_fpa_ofproto_get_stp_status(struct ofproto *up, struct ofproto_stp_status *s)
 }
 
 static int
-ops_fpa_ofproto_set_stp_port(struct ofport *port, const struct ofproto_port_stp_settings *s)
+ops_fpa_ofproto_set_stp_port(struct ofport *port,
+                             const struct ofproto_port_stp_settings *s)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
 }
 
 static int
-ops_fpa_ofproto_get_stp_port_status(struct ofport *port, struct ofproto_port_stp_status *s)
+ops_fpa_ofproto_get_stp_port_status(struct ofport *port,
+                                    struct ofproto_port_stp_status *s)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
 }
 
 static int
-ops_fpa_ofproto_get_stp_port_stats(struct ofport *port, struct ofproto_port_stp_stats *s)
+ops_fpa_ofproto_get_stp_port_stats(struct ofport *port,
+                                   struct ofproto_port_stp_stats *s)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
 }
 
 static void
-ops_fpa_ofproto_set_rstp(struct ofproto *up, const struct ofproto_rstp_settings *s)
+ops_fpa_ofproto_set_rstp(struct ofproto *up,
+                         const struct ofproto_rstp_settings *s)
 {
     FPA_TRACE_FN();
 }
 
 static void
-ops_fpa_ofproto_get_rstp_status(struct ofproto *up, struct ofproto_rstp_status *s)
+ops_fpa_ofproto_get_rstp_status(struct ofproto *up,
+                                struct ofproto_rstp_status *s)
 {
     FPA_TRACE_FN();
 }
 
 static void
-ops_fpa_ofproto_set_rstp_port(struct ofport *port, const struct ofproto_port_rstp_settings *s)
+ops_fpa_ofproto_set_rstp_port(struct ofport *port,
+                              const struct ofproto_port_rstp_settings *s)
 {
     FPA_TRACE_FN();
 }
 
 static void
-ops_fpa_ofproto_get_rstp_port_status(struct ofport *port, struct ofproto_port_rstp_status *s)
+ops_fpa_ofproto_get_rstp_port_status(struct ofport *port,
+                                     struct ofproto_port_rstp_status *s)
 {
     FPA_TRACE_FN();
 }
 
 static int
-ops_fpa_ofproto_set_queues(struct ofport *port, const struct ofproto_port_queue *queues, size_t n_qdscp)
+ops_fpa_ofproto_set_queues(struct ofport *port,
+                           const struct ofproto_port_queue *queues,
+                           size_t n_qdscp)
 {
     FPA_TRACE_FN();
     return EOPNOTSUPP;
@@ -820,8 +856,8 @@ bundle_ipv4_secondary_reconfigure (struct bundle_fpa *bundle,
         if (!shash_find_data(&new_ip_list, addr->address)) {
             VLOG_INFO("Remove secondary IPv4 addr %s", addr->address);
             hmap_remove(&bundle->secondary_ip4addr, &addr->addr_node);
-            /*TODO ops_xp_routing_delete_host_entry(ofproto, is_ipv6, addr->address,
-                                             &addr->id);*/
+            /*TODO ops_xp_routing_delete_host_entry(ofproto, is_ipv6,
+             *                                addr->address, &addr->id);*/
             free(addr->address);
             free(addr);
         }
@@ -908,27 +944,30 @@ bundle_ip_reconfigure(struct ofproto_fpa *ofproto,
 
 /*Try to add VLAN member in ASIC checking is vlan enabled in ofproto*/
 static int
-ops_fpa_vlan_member_add(struct ofproto_fpa* ofproto, int pid, int vid, bool tag_in, bool tag_out)
+ops_fpa_vlan_member_add(struct ofproto_fpa* ofproto, int pid, int vid,
+                        bool tag_in, bool tag_out)
 {
     if(bitmap_is_set(ofproto->vlans, vid)) {
         VLOG_INFO("Add member %d to ENABLED VLAN %d", pid, vid);
-        return ops_fpa_vlan_add(pid, vid, tag_in, tag_out);
+        return ops_fpa_vlan_add(ofproto->switch_id, pid, vid, tag_in, tag_out);
     }
     return 0;
 }
 
 /*Try to remove member from VLAN in ASIC checking is vlan enabled in ofproto*/
 static int
-ops_fpa_vlan_member_rm(struct ofproto_fpa* ofproto, int pid, int vid, bool tag_in)
+ops_fpa_vlan_member_rm(struct ofproto_fpa* ofproto, int pid, int vid,
+                       bool tag_in)
 {
     if (bitmap_is_set(ofproto->vlans, vid)) {
         VLOG_INFO("Remove member %d from ENABLED VLAN %d", pid, vid);
-        return ops_fpa_vlan_rm(pid, vid, tag_in);
+        return ops_fpa_vlan_rm(ofproto->switch_id, pid, vid, tag_in);
     }
     return 0;
 }
 static int
-ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_bundle_settings *set)
+ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux,
+                           const struct ofproto_bundle_settings *set)
 {
     int err_no = 0;
     struct bundle_fpa *bundle = NULL;
@@ -940,7 +979,7 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
     bundle = ops_fpa_find_bundle_by_aux(up, aux);
 
     /* remove bundle if needed */
-    if (NULL == set) {
+    if (set == NULL) {
         VLOG_INFO("ops_fpa_ofproto_bundle_set: REMOVE bundle");
         return ops_fpa_rm_bundle(up, bundle);
     }
@@ -951,7 +990,7 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
         return EINVAL;
     }
     /* create bundle if needed */
-    if (NULL == bundle) {
+    if (bundle == NULL) {
         VLOG_INFO("ops_fpa_ofproto_bundle_set: CREATE bundle");
         ops_fpa_create_bundle_record(up, aux, &bundle);
         bundle->name = NULL;
@@ -979,10 +1018,10 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
         bundle->ip4addr = NULL;
         hmap_init(&bundle->secondary_ip4addr);
     }
-
-    if (!bundle->name || strcmp (set->name, bundle->name)) {
-        free (bundle->name);
-        bundle->name = xstrdup (set->name);
+    /* Set bundle name. */
+    if (!bundle->name || !STR_EQ(set->name, bundle->name)) {
+        free(bundle->name);
+        bundle->name = xstrdup(set->name);
     }
     VLOG_INFO("%s: bundle->name=%s\n "
              "n_slaves=%zu, slaves[0]=%d, vlan_mode=%d"
@@ -995,40 +1034,43 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
     /* TODO: check this->vlans */
     /* for now, we don't support L3 on top of LAG */
 
-    if (is_ofproto_vrf(&ofproto->up) && (set->n_slaves == 1)) {
+    if (is_ofproto_vrf(&ofproto->up)) {
         struct ofport_fpa *port;
         const char* type;
         VLOG_INFO("Configure vrf interface");
         port = ops_fpa_get_ofproto_fpa_port(&ofproto->up, set->slaves[0]);
-        if (NULL == port) {
+        if (port == NULL) {
             VLOG_ERR("Slave is not in the ports");
             return 0;
         }
 
         type = netdev_get_type(port->up.netdev);
-        VLOG_INFO("ofproto type: %s", type);
+        VLOG_INFO("netdev type: %s", type);
 
-        if (STR_EQ(type, OVSREC_INTERFACE_TYPE_INTERNAL)) {
+        if (STR_EQ(type, OVSREC_INTERFACE_TYPE_SYSTEM)) {
+            vlan_id = smap_get_int (set->port_options[PORT_HW_CONFIG],
+                                    "internal_vlan_id", 0);
+        }
+        else if (STR_EQ(type, OVSREC_INTERFACE_TYPE_INTERNAL)) {
             vlan_id = set->vlan;
             VLOG_INFO("%s get interface vlan internal vlan = %d", __FUNCTION__,
                      vlan_id);
         }
         else if (STR_EQ(type, OVSREC_INTERFACE_TYPE_VLANSUBINT)) {
-            VLOG_DBG("%s get subinterface vlan", __FUNCTION__);
+            VLOG_INFO("%s get subinterface vlan", __FUNCTION__);
             /*bcm call copy-paste*/
             /*netdev_bcmsdk_get_subintf_vlan (port->up.netdev, &vlan_id);*/
             VLOG_INFO("%s subinterface vlan = %d", __FUNCTION__, vlan_id);
-            VLOG_ERR("VLAN subintf not supported yet");
+            VLOG_WARN("VLAN subintf not supported yet");
             goto done;
         }
-        else if ((strcmp(type, OVSREC_INTERFACE_TYPE_LOOPBACK) == 0)) {
+        else if (STR_EQ(type, OVSREC_INTERFACE_TYPE_LOOPBACK)) {
             /* For l3-loopback interfaces, just configure ips */
-            VLOG_INFO("%s Done with l3 loopback configurations", __FUNCTION__);
+            VLOG_WARN("%s Done with l3 loopback configurations", __FUNCTION__);
             goto done;
         }
         else {
-            vlan_id = smap_get_int(set->port_options[PORT_HW_CONFIG],
-                                    "internal_vlan_id", 0);
+            VLOG_WARN("%s is not supported yet", type);
         }
         VLOG_INFO("VLAN_ID=%d",vlan_id);
 
@@ -1041,9 +1083,8 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
                 bundle->l3_intf = NULL;
             }
         }
-
+        /* Create L3 structure if needed. */
         if (vlan_id && !bundle->l3_intf && set->enable) {
-
             struct eth_addr mac;
             netdev_get_etheraddr(port->up.netdev, &mac);
 
@@ -1052,64 +1093,32 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
                       ETH_ADDR_ARGS(mac), vlan_id);
 
             if (STR_EQ(type, OVSREC_INTERFACE_TYPE_SYSTEM)) {
-#if 0
-                bundle->intfId = ops_xp_get_ofport_intf_id (port);
-                bundle->l3_intf = ops_xp_routing_enable_l3_inerface (
-                        ofproto, bundle->intfId, vlan_id, mac.ea);
-                /* TODO: Check whether the default VLAN is not set by
-                 * xpsVlanAddInterface() inside xp_routing_enable_l3_interface()
-                 */
-                ops_xp_port_default_vlan_set (ofproto->xpdev->id,
-                                              ops_xp_get_ofport_number (port),
-                                              vlan_id);
-#endif
                 VLOG_INFO("Enabling ROUTING on SYSTEM interface");
-                bundle->l3_intf = ops_fpa_enable_routing_interface(ofproto->switch_id, bundle->intfId, vlan_id, mac);
+                bundle->l3_intf = ops_fpa_enable_routing_interface(
+                        ofproto->switch_id, bundle->intfId, vlan_id, mac);
                 goto done;
             }
             else if (STR_EQ(type, OVSREC_INTERFACE_TYPE_VLANSUBINT)) {
-                /*Xpliant calls*/
-#if 0
-                bundle->intfId = ops_xp_get_ofport_intf_id (port);
-                bundle->l3_intf = ops_xp_routing_enable_l3_subinterface (
-                        ofproto, bundle->intfId, vlan_id, mac.ea);
-#endif
                 VLOG_INFO("Enabling ROUTING on VLAN SUBINTERFACE");
                 VLOG_WARN("Subinterface is not supported yet");
                 goto done;
             }
             else if (STR_EQ(type, OVSREC_INTERFACE_TYPE_INTERNAL)) {
-                /*Xpliant calls*/
-#if 0
-                bundle->l3_intf = ops_xp_routing_enable_l3_vlan_interface (
-                        ofproto, vlan_id, mac.ea);
-#endif
                 VLOG_INFO("Enabling ROUTING on internal VLAN interface");
-                bundle->l3_intf = ops_fpa_enable_routing_vlan(ofproto->switch_id, vlan_id, mac);
+                bundle->l3_intf = ops_fpa_enable_routing_vlan(
+                        ofproto->switch_id, vlan_id, mac);
                 goto done;
             }
             else {
                 VLOG_ERR("%s: unknown interface type: %s", __FUNCTION__, type);
-
             }
         }
 
         bundle_ip_reconfigure(ofproto, bundle, set);
     }
 
-    /*ops_fpa_port_ip_reconfigure (up, aux, set);*/
-    /* If ofproto's name is equal to bundle name => interface internal*/
+    /* If ofproto's name is equal to bundle name => interface internal. */
     if (STR_EQ(ofproto->up.name, bundle->name)) {
-#if 0
-        struct netdev* sys_dev = netdev_from_name(ofproto->up.name);
-
-        if (sys_dev != NULL) {
-            /* The system MAC is the same as internal port's MAC. */
-            netdev_get_etheraddr(sys_dev, &ofproto->sys_mac);
-            netdev_close(sys_dev);
-        }
-
-#endif
         VLOG_INFO("INTERNAL INTERFACE");
         /* Nothing to do for internal port. */
         return 0;
@@ -1126,10 +1135,10 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
         case PORT_VLAN_NATIVE_UNTAGGED:
         case PORT_VLAN_NATIVE_TAGGED:
             if (set->trunks) {
-                memcpy (set_trunks, set->trunks, sizeof(set_trunks));
+                memcpy(set_trunks, set->trunks, sizeof(set_trunks));
             }
             else {
-                memset (set_trunks, 0xFF, sizeof(set_trunks));
+                memset(set_trunks, 0xFF, sizeof(set_trunks));
             }
             break;
         default:
@@ -1138,53 +1147,53 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
 
     if(!is_ofproto_vrf(&ofproto->up)
             && (bundle->intfId != FPA_INVALID_INTF_ID)) {
-        VLOG_INFO("Configuring L2 interface VLAN\'s");
-        /* ASIC operations with VLANs */
+        VLOG_INFO("Configuring L2 interface VLAN's");
+
+        /* Initial VLAN configuration when bundle is just created. */
         if((bundle->vlan == -1) && bundle->vlan_mode == PORT_VLAN_ACCESS) {
-            /* Illegal VLAN confguration */
-            /* VLAN = -1 & MODE = ACCESS */
-            /* Can be set only during bundle initialization */
+
             if(set->vlan != -1) {
-                ops_fpa_vlan_member_add (
-                        ofproto, bundle->intfId, set->vlan,
-                        false,
-                        set->vlan_mode == PORT_VLAN_NATIVE_TAGGED);
-            }
-        } else if ((bundle->vlan != set->vlan)
-                || (bundle->vlan_mode != set->vlan_mode
-                        && set->vlan_mode != PORT_VLAN_TRUNK)) {
-            /* Switching from trunk mode - adding pvid */
-            if (bundle->vlan == -1) {
-                /*We need to assign port to vlan */
-                VLOG_DBG("VLAN ADD vlan_id %d intf %d", bundle->vlan,
-                         bundle->intfId);
-                ops_fpa_vlan_member_add (
+                ops_fpa_vlan_member_add(
                         ofproto, bundle->intfId, set->vlan, false,
                         set->vlan_mode == PORT_VLAN_NATIVE_TAGGED);
             }
-            /* Switching to trunk mode - removing pvid */
+        }
+        /* Change VLAN configuration. */
+        else if ((bundle->vlan != set->vlan)
+                     || (bundle->vlan_mode != set->vlan_mode
+                         && set->vlan_mode != PORT_VLAN_TRUNK)) {
+            /* Switching from trunk mode - adding pvid. */
+            if (bundle->vlan == -1) {
+                /* We need to assign port to vlan. */
+                VLOG_DBG("VLAN ADD vlan_id %d intf %d", bundle->vlan,
+                         bundle->intfId);
+                ops_fpa_vlan_member_add(
+                        ofproto, bundle->intfId, set->vlan, false,
+                        set->vlan_mode == PORT_VLAN_NATIVE_TAGGED);
+            }
+            /* Switching to trunk mode - removing pvid. */
             else if (set->vlan == -1) {
                 VLOG_DBG("VLAN RM vlan_id %d intf %d", bundle->vlan,
                          bundle->intfId);
-                ops_fpa_vlan_member_rm (ofproto, bundle->intfId, bundle->vlan,
-                                        false);
+                ops_fpa_vlan_member_rm(ofproto, bundle->intfId, bundle->vlan,
+                                       false);
             }
-            /* Updating mode to native VLAN*/
+            /* Updating mode to native VLAN. */
             else {
                 VLOG_DBG("VLAN NATIVE");
                 VLOG_DBG("VLAN ADD vlan_id %d intf %d", bundle->vlan,
                          bundle->intfId);
-                ops_fpa_vlan_member_rm (ofproto, bundle->intfId, bundle->vlan,
+                ops_fpa_vlan_member_rm(ofproto, bundle->intfId, bundle->vlan,
                                         false);
                 VLOG_DBG("VLAN RM vlan_id %d intf %d", set->vlan,
                          bundle->intfId);
-
-                ops_fpa_vlan_member_add (ofproto, bundle->intfId, set->vlan,
-                                     false,
-                                     set->vlan_mode == PORT_VLAN_NATIVE_TAGGED);
+                ops_fpa_vlan_member_add(
+                        ofproto, bundle->intfId, set->vlan, false,
+                        set->vlan_mode == PORT_VLAN_NATIVE_TAGGED);
             }
         }
 
+        /* Update trunk configuration. */
         unsigned long diff_trunks[BITMAP_N_LONGS(FPA_VLAN_MAX_COUNT)];
         for (int i = 0; i < sizeof(diff_trunks) / sizeof(diff_trunks[0]); i++) {
             diff_trunks[i] = set_trunks[i] ^ bundle->trunks[i];
@@ -1193,12 +1202,11 @@ ops_fpa_ofproto_bundle_set(struct ofproto *up, void *aux, const struct ofproto_b
         int vid;
         BITMAP_FOR_EACH_1(vid, FPA_VLAN_MAX_COUNT, diff_trunks)
         {
-            if (bitmap_is_set (set_trunks, vid)) {
-                ops_fpa_vlan_member_add (ofproto, bundle->intfId, vid, true,
-                                         true);
-            }
-            else {
-                ops_fpa_vlan_member_rm (ofproto, bundle->intfId, vid, true);
+            if (bitmap_is_set(set_trunks, vid)) {
+                ops_fpa_vlan_member_add(ofproto, bundle->intfId, vid, true,
+                                        true);
+            } else {
+                ops_fpa_vlan_member_rm(ofproto, bundle->intfId, vid, true);
             }
         }
 
@@ -1239,7 +1247,8 @@ ops_fpa_ofproto_set_vlan(struct ofproto *up, int vid, bool add)
     struct bundle_fpa *bundle;
     HMAP_FOR_EACH(bundle, node, &this->bundles) {
         if(vid == bundle->vlan) {
-            ops_fpa_vlan_mod(add, bundle->intfId, vid, bundle->vlan_mode);
+            ops_fpa_vlan_mod(add, this->switch_id, bundle->intfId, vid,
+                             bundle->vlan_mode);
         }
         if ((NULL != bundle->trunks) && (vid != bundle->vlan)
                 && bitmap_is_set(bundle->trunks, vid)
@@ -1248,7 +1257,8 @@ ops_fpa_ofproto_set_vlan(struct ofproto *up, int vid, bool add)
                        || bundle->vlan_mode == PORT_VLAN_NATIVE_TAGGED))
         {
             /*Port is trunk*/
-            ops_fpa_vlan_mod(add, bundle->intfId, vid, PORT_VLAN_TRUNK);
+            ops_fpa_vlan_mod(add, this->switch_id, bundle->intfId, vid,
+                             PORT_VLAN_TRUNK);
         }
     }
 
@@ -1557,8 +1567,8 @@ add_l3_host_entry(const struct ofproto *ofproto, void *aux,
     }
 
     /* Allocate ARP index. */
-    uint32_t arp_index = marvell_ops_utils_resource_alloc(l3_index_resource);
-    if (arp_index == NO_RESOURCE) {
+    uint32_t arp_index = ops_marvell_utils_resource_alloc(l3_index_resource);
+    if (arp_index == OPS_FPA_NO_RESOURCE) {
         VLOG_ERR("%s: Can't allocate index resource.", __func__);
         return EINVAL;
     }
@@ -1624,7 +1634,7 @@ delete_l3_host_entry(const struct ofproto *ofproto, void *aux,
     ops_fpa_route_del_route(switchid, ipv4_addr, mask_len);
     ops_fpa_route_del_group(switchid, entry->l3_group);
     ops_fpa_route_del_group(switchid, entry->l2_group);
-    marvell_ops_utils_resource_free(l3_index_resource, entry->arp_index);
+    ops_marvell_utils_resource_free(l3_index_resource, entry->arp_index);
     host_table_delete(entry);
 
     return 0;

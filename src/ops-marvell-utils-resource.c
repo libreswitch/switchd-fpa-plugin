@@ -13,23 +13,22 @@
 *    See the Apache Version 2.0 License for specific language governing
 *    permissions and limitations under the License.
 *
- *  File: ops-marvell-utils-resource.c
- *
- *  Purpose: This file contains resource manager of numbers 1..n.
+*    File: ops-marvell-utils-resource.c
+*
+*    Purpose: Resource allocation for L3 FPA functions.
 */
 
 #include "ops-marvell-utils-resource.h"
 #include <assert.h>
 #include "ofproto/ofproto-provider.h"
 
+#define OPS_FPA_RESOURCE_FREE_HEADER_ 0
+#define	OPS_FPA_RESOURCE_RESOURCE_ OPS_FPA_NO_RESOURCE 
 
-#define FREE_HEADER_INDEX 0
-#define	RESOURCE_ALLOCATED NO_RESOURCE 
-
-void *marvell_ops_utils_resource_init(size_t size)
+void *ops_marvell_utils_resource_init(size_t size)
 {
-    resource_id_t *arr = xmalloc((size + 1) * sizeof(resource_id_t));
-    resource_id_t i;
+    ops_fpa_resource_id_t *arr = xmalloc((size + 1) * sizeof(ops_fpa_resource_id_t));
+    ops_fpa_resource_id_t i;
 
     if (arr == NULL) {
         return arr;
@@ -39,31 +38,31 @@ void *marvell_ops_utils_resource_init(size_t size)
         arr[i] = i + 1;
     }
 
-    arr[i] = NO_RESOURCE;
+    arr[i] = OPS_FPA_NO_RESOURCE;
 
     return arr;
 }
 
-resource_id_t marvell_ops_utils_resource_alloc(void *resource)
+ops_fpa_resource_id_t ops_marvell_utils_resource_alloc(void *resource)
 {
-    resource_id_t *arr = resource;
+    ops_fpa_resource_id_t *arr = resource;
     assert(resource != NULL);
 
-    if (arr[FREE_HEADER_INDEX] == NO_RESOURCE) {
-        return NO_RESOURCE;
+    if (arr[OPS_FPA_RESOURCE_FREE_HEADER_] == OPS_FPA_NO_RESOURCE) {
+        return OPS_FPA_NO_RESOURCE;
     }
 
-    resource_id_t i = arr[FREE_HEADER_INDEX];
-    arr[FREE_HEADER_INDEX] = arr[i];
-    arr[i] = RESOURCE_ALLOCATED;
+    ops_fpa_resource_id_t i = arr[OPS_FPA_RESOURCE_FREE_HEADER_];
+    arr[OPS_FPA_RESOURCE_FREE_HEADER_] = arr[i];
+    arr[i] = OPS_FPA_RESOURCE_RESOURCE_;
     return i;
 }
 
-void marvell_ops_utils_resource_free(void *resource, resource_id_t i)
+void ops_marvell_utils_resource_free(void *resource, ops_fpa_resource_id_t i)
 {
-    resource_id_t *arr = resource;
+    ops_fpa_resource_id_t *arr = resource;
     assert(resource != NULL);
-    assert(arr[i] == RESOURCE_ALLOCATED);
-    arr[i] = arr[FREE_HEADER_INDEX];
-    arr[FREE_HEADER_INDEX] = i;
+    assert(arr[i] == OPS_FPA_RESOURCE_RESOURCE_);
+    arr[i] = arr[OPS_FPA_RESOURCE_FREE_HEADER_];
+    arr[OPS_FPA_RESOURCE_FREE_HEADER_] = i;
 }

@@ -36,12 +36,11 @@
 #include "ops-fpa-tap.h"
 #include "ops-fpa-vlan.h"
 
-/* TODO: need set actual value */
 #define FPA_HAL_MAX_MTU_CNS     10240
 
-#define PRINT_10_BYTES_FMT \
+#define OPS_FPA_PRINT_10_BYTES_FMT \
     "0x%02"PRIx8" 0x%02"PRIx8" 0x%02"PRIx8" 0x%02"PRIx8"  0x%02"PRIx8" 0x%02"PRIx8" 0x%02"PRIx8" 0x%02"PRIx8"  0x%02"PRIx8" 0x%02"PRIx8
-#define PRINT_10_BYTES_ARGS(EAB) \
+#define OPS_FPA_PRINT_10_BYTES_ARGS(EAB) \
     (EAB)[0], (EAB)[1], (EAB)[2], (EAB)[3], (EAB)[4], (EAB)[5], (EAB)[6], (EAB)[7], (EAB)[8], (EAB)[9]
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_tap);
@@ -108,14 +107,14 @@ ops_fpa_tap_init(uint32_t switchId)
 {
     struct tap_info *info;
 
-    ovs_assert(switchId>=0);
+    ovs_assert(switchId != FPA_INVALID_SWITCH_ID);
 
     VLOG_INFO("TAP interface init for FPA device (%d)", switchId);
 
     info = get_tap_info_by_switch_id(switchId);
     if (info) {
         VLOG_ERR("TAP interfaces for FPA device (%d) already exist", switchId);
-        return NULL;
+        return info;
     }
 
     /* Create TAP info for switch */
@@ -143,19 +142,19 @@ ops_fpa_tap_init(uint32_t switchId)
     return info;
 }
 
-int
+void
 ops_fpa_tap_deinit(uint32_t switchId)
 {
     struct tap_if_entry *e;
     struct tap_if_entry *next;
     struct tap_info *info;
 
-    ovs_assert(switchId>=0);
+    ovs_assert(switchId != FPA_INVALID_SWITCH_ID);
 
     info = get_tap_info_by_switch_id(switchId);
 
     if (!info) {
-        return 0;
+        return;
     }
 
     /* Stop ASIC lisener thread */
@@ -185,7 +184,6 @@ ops_fpa_tap_deinit(uint32_t switchId)
     VLOG_INFO("Host interface TAP-based instance deallocated");
 
     /* TODO: check return error code */
-    return 0;
 }
 
 int
@@ -198,7 +196,7 @@ ops_fpa_tap_if_create(uint32_t switchId, uint32_t portNum, const char *name,
     struct tap_info *info;
     struct tap_if_entry *if_entry;
     
-    ovs_assert(switchId>=0);
+    ovs_assert(switchId != FPA_INVALID_SWITCH_ID);
     ovs_assert(name);/* TODO check why ovs_assert doesnt work */
     ovs_assert(mac);
     ovs_assert(tap_fd);
@@ -209,7 +207,6 @@ ops_fpa_tap_if_create(uint32_t switchId, uint32_t portNum, const char *name,
         VLOG_ERR("TAP interface not initialized for FPA device (%d)", switchId);
         return EFAULT;
     }
-    ops_fpa_dev_mutex_unlock();
 
     /*TODO add check internal bridge TAP is created only once - currently only 'bridge_normal' is supported */
     snprintf(tap_if_name, IFNAMSIZ, "%s", name);
@@ -257,6 +254,8 @@ ops_fpa_tap_if_create(uint32_t switchId, uint32_t portNum, const char *name,
     /* Notify TAP listener thread about new TAP interface. */
     ignore(write(info->if_upd_fds[1], "", 1));
 
+    ops_fpa_dev_mutex_unlock();
+
     return 0;
 }
 
@@ -266,7 +265,7 @@ ops_fpa_tap_if_delete(uint32_t switchId, int tap_fd)
     struct tap_info *info;
     struct tap_if_entry *if_entry;
 
-    ovs_assert(switchId>=0);
+    ovs_assert(switchId != FPA_INVALID_SWITCH_ID);
     ovs_assert(tap_fd>0);
 
     ops_fpa_dev_mutex_lock();
@@ -431,7 +430,8 @@ tap_listener(void *arg)
         if (select(FD_SETSIZE, &read_fd_set, NULL, NULL, NULL) < 0) {
             VLOG_ERR("%s, Select failed. Error(%d) - %s",
                      __FUNCTION__, errno, strerror(errno));
-            goto exit;
+            if (errno == EINTR)
+                goto exit;
         }
 
         /* TODO: need create cycle only for read_fd_set FD */
@@ -495,13 +495,13 @@ tap_listener(void *arg)
                 eth_hdr = (struct ether_header *)pkt.pktDataPtr;
                 eth_type = ntohs(eth_hdr->ether_type);
                 VLOG_INFO("%s, RX packet of %d bytes (dst: "ETH_ADDR_FMT" src: "ETH_ADDR_FMT" type: 0x%04x)"
-                                  " on TAP '%s'\n  data: "PRINT_10_BYTES_FMT,
+                                  " on TAP '%s'\n  data: "OPS_FPA_PRINT_10_BYTES_FMT,
                          __FUNCTION__, pkt.pktDataSize,
                          ETH_ADDR_BYTES_ARGS(eth_hdr->ether_dhost), 
                          ETH_ADDR_BYTES_ARGS(eth_hdr->ether_shost),
                          eth_type,
                          if_entry->name,
-                         PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
+                         OPS_FPA_PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
 
                 /*TODO if tagged packet from port TAP then check if port is member of VLAN, 
                  * If not - drop it,
@@ -549,13 +549,13 @@ tap_listener(void *arg)
 
                 eth_hdr = (struct ether_header *)pkt.pktDataPtr;
                 VLOG_INFO("%s, TX %d bytes (dst: "ETH_ADDR_FMT" src: "ETH_ADDR_FMT" type: 0x%04x)" /*TODO to be changed to VLOG_INFO_Rl */
-                          " to ASIC port %d\n  data: "PRINT_10_BYTES_FMT,
+                          " to ASIC port %d\n  data: "OPS_FPA_PRINT_10_BYTES_FMT,
                  __FUNCTION__, pkt.pktDataSize,
                  ETH_ADDR_BYTES_ARGS(eth_hdr->ether_dhost), 
                  ETH_ADDR_BYTES_ARGS(eth_hdr->ether_shost),
                  ntohs(eth_hdr->ether_type),
                  pkt.outPortNum,
-                 PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
+                 OPS_FPA_PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
 
                 status = fpaLibPortPktSend(info->switchId, FPA_INVALID_INTF_ID, &pkt);
                 if (status != FPA_OK) {
@@ -652,14 +652,14 @@ asic_listener(void *arg)
         eth_hdr = (struct ether_header *)pkt.pktDataPtr;
         eth_type = ntohs(eth_hdr->ether_type);
         VLOG_INFO("%s, TX packet of bytes:%d (ingressed on port:%d, reason:%d tableId:%d (dst: " /*TODO to be changed to VLOG_INFO_Rl */
-                     ETH_ADDR_FMT" src: "ETH_ADDR_FMT" type: 0x%04x) to TAP '%s'\n  data:"PRINT_10_BYTES_FMT,
+                     ETH_ADDR_FMT" src: "ETH_ADDR_FMT" type: 0x%04x) to TAP '%s'\n  data:"OPS_FPA_PRINT_10_BYTES_FMT,
                      __FUNCTION__, pkt.pktDataSize, 
                      pkt.inPortNum, pkt.reason, pkt.tableId,
                      ETH_ADDR_BYTES_ARGS(eth_hdr->ether_dhost), 
                      ETH_ADDR_BYTES_ARGS(eth_hdr->ether_shost),
                      eth_type,
                      if_entry->name,
-                     PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
+                     OPS_FPA_PRINT_10_BYTES_ARGS((uint8_t*)eth_hdr+sizeof(struct ether_header)));
 
         do {
             ret = write(if_entry->fd, pkt.pktDataPtr, pkt.pktDataSize);
@@ -724,6 +724,42 @@ get_port_eg_tag_state(uint32_t switchId, uint32_t portNum, uint16_t vlanId, bool
     }
 
     *pop_tag =  bucket.data.l2Interface.popVlanTagAction;
+
+    return 0;
+}
+
+int
+ops_fpa_net_if_setup(const char *name, const struct ether_addr *mac)
+{
+    int  rc = 0;
+    char buf[32] = {0};
+
+    /* Bring the Ethernet interface DOWN. */
+    rc = ops_fpa_system("/sbin/ifconfig %s down", name);
+    if (rc != 0) {
+        VLOG_ERR("Failed to bring down %s interface. (rc=%d)",
+                 name, rc);
+        return EFAULT;
+    }
+
+    /* Set MAC address for the Ethernet interface. */
+    rc = ops_fpa_system("/sbin/ip link set %s address %s",
+                       name, ether_ntoa_r(mac, buf));
+    if (rc != 0) {
+        VLOG_ERR("Failed to set MAC address for %s interface. (rc=%d)",
+                 name, rc);
+        return EFAULT;
+    }
+
+    VLOG_INFO("Set MAC address for %s to %s", name, buf);
+
+    /* Bring the Ethernet interface UP. */
+    rc = ops_fpa_system("/sbin/ifconfig %s up", name);
+    if (rc != 0) {
+        VLOG_ERR("Failed to bring up %s interface. (rc=%d)",
+                 name, rc);
+        return EFAULT;
+    }
 
     return 0;
 }

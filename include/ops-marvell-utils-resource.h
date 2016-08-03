@@ -13,6 +13,9 @@
 *    See the Apache Version 2.0 License for specific language governing
 *    permissions and limitations under the License.
 *
+*    File: ops-marvell-utils-resource.h
+*
+*    Purpose: Resource allocation for L3 FPA functions.
 */
 
 #ifndef _marvell_ops_utils_resource_
@@ -20,15 +23,15 @@
 
 #include <stdlib.h>
 
-#define	NO_RESOURCE 0
+#define	OPS_FPA_NO_RESOURCE 0
 
-typedef int resource_id_t;
+typedef int ops_fpa_resource_id_t;
 
-void *marvell_ops_utils_resource_init(size_t size);
+void *ops_marvell_utils_resource_init(size_t size);
 
-resource_id_t marvell_ops_utils_resource_alloc(void *resource);
+ops_fpa_resource_id_t ops_marvell_utils_resource_alloc(void *resource);
 
-void marvell_ops_utils_resource_free(void * resource, resource_id_t i);
+void ops_marvell_utils_resource_free(void * resource, ops_fpa_resource_id_t i);
 
 
 #endif

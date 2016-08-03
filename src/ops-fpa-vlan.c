@@ -25,22 +25,25 @@ VLOG_DEFINE_THIS_MODULE(ops_fpa_vlan);
 #define FPA_FLOW_VLAN_MASK_TAG   0x1FFF
 
 int
-ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out)
+ops_fpa_vlan_add(uint32_t switch_id, int pid, int vid, bool tag_in, bool tag_out)
 {
     uint32_t gid;
-    int err;
+    FPA_STATUS err;
 
     FPA_FLOW_TABLE_ENTRY_STC flow;
-    fpaLibFlowEntryInit(0, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
+    fpaLibFlowEntryInit(switch_id, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
     flow.cookie = ops_fpa_vlan_cookie(pid, vid, tag_in);
     flow.data.vlan.inPort = pid;
     flow.data.vlan.vlanId = vid;
     flow.data.vlan.vlanIdMask = tag_in ? FPA_FLOW_VLAN_MASK_TAG : FPA_FLOW_VLAN_MASK_UNTAG;
     flow.data.vlan.newTagVid = tag_in ? -1 : vid;
     flow.data.vlan.newTagPcp = -1;
-    err = wrap_fpaLibFlowEntryAdd(0, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
+    err = wrap_fpaLibFlowEntryAdd(switch_id, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
     if (err) {
-        VLOG_ERR("fpaLibFlowEntryAdd: Status: %s", ops_fpa_strerr(err));
+        VLOG_ERR("fpaLibFlowEntryAdd: Status: %s\n"
+        		"vlan.inPort: %d, vlan.vlanId: %d",
+        		ops_fpa_strerr(err),
+        		flow.data.vlan.inPort, flow.data.vlan.vlanId);
         return -1;
     }
 
@@ -59,7 +62,7 @@ ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out)
         .groupIdentifier = gid,
         .groupTypeSemantics = FPA_GROUP_INDIRECT
     };
-    err = wrap_fpaLibGroupTableEntryAdd(0, &group);
+    err = wrap_fpaLibGroupTableEntryAdd(switch_id, &group);
     if (err) {
         VLOG_ERR("fpaLibGroupTableEntryAdd: Status: %s", ops_fpa_strerr(err));
         return -1;
@@ -70,11 +73,11 @@ ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out)
         .index = 0,
         .type = FPA_GROUP_BUCKET_L2_INTERFACE_E,
         .data.l2Interface = {
-            .outputPort = FPA_GROUP_ENTRY_PORT_GET_MAC(gid),
+            .outputPort = pid,
             .popVlanTagAction = !tag_out
         }
     };
-    err = wrap_fpaLibGroupEntryBucketAdd(0, &bucket);
+    err = wrap_fpaLibGroupEntryBucketAdd(switch_id, &bucket);
     if (err) {
         VLOG_ERR("fpaLibGroupEntryBucketAdd: Status: %s", ops_fpa_strerr(err));
         return -1;
@@ -84,11 +87,13 @@ ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out)
 }
 
 int
-ops_fpa_vlan_rm(int pid, int vid, bool tag_in)
+ops_fpa_vlan_rm(uint32_t switch_id, int pid, int vid, bool tag_in)
 {
-    int err = wrap_fpaLibFlowTableCookieDelete(0, FPA_FLOW_TABLE_TYPE_VLAN_E, ops_fpa_vlan_cookie(pid, vid, tag_in));
+    FPA_STATUS err = wrap_fpaLibFlowTableCookieDelete(switch_id,
+            FPA_FLOW_TABLE_TYPE_VLAN_E, ops_fpa_vlan_cookie(pid, vid, tag_in));
     if (err) {
-        VLOG_ERR("fpaLibFlowTableCookieDelete: Status: %s", ops_fpa_strerr(err));
+        VLOG_ERR("fpaLibFlowTableCookieDelete: Status: %s",
+                 ops_fpa_strerr(err));
     }
 
     FPA_GROUP_ENTRY_IDENTIFIER_STC ident = {
@@ -103,7 +108,7 @@ ops_fpa_vlan_rm(int pid, int vid, bool tag_in)
         return -1;
     }
 
-    err = wrap_fpaLibGroupTableEntryDelete(0, gid);
+    err = wrap_fpaLibGroupTableEntryDelete(switch_id, gid);
     if (err) {
         VLOG_ERR("fpaLibGroupTableEntryDelete: Status: %s", ops_fpa_strerr(err));
         return -1;
@@ -113,13 +118,16 @@ ops_fpa_vlan_rm(int pid, int vid, bool tag_in)
 }
 
 int
-ops_fpa_vlan_mod(bool add, int pid, int vid, enum port_vlan_mode mode)
+ops_fpa_vlan_mod(bool add, uint32_t switch_id, int pid, int vid,
+                 enum port_vlan_mode mode)
 {
     if(pid != FPA_INVALID_INTF_ID) {
         bool tag_in  = (mode == PORT_VLAN_TRUNK);
-        bool tag_out = (mode == PORT_VLAN_TRUNK) || (mode == PORT_VLAN_NATIVE_TAGGED);
+        bool tag_out = (mode == PORT_VLAN_TRUNK)
+                || (mode == PORT_VLAN_NATIVE_TAGGED);
 
-        return add ? ops_fpa_vlan_add(pid, vid, tag_in, tag_out) : ops_fpa_vlan_rm(pid, vid, tag_in);
+        return add ? ops_fpa_vlan_add(switch_id, pid, vid, tag_in, tag_out)
+                : ops_fpa_vlan_rm(switch_id, pid, vid, tag_in);
     }
     return 0;
 }

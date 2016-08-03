@@ -40,6 +40,7 @@ extern FPA_STATUS fpaGroupTableDump(void);
 
 static void ops_fpa_dev_unixctl_init(void);
 
+
 void
 ops_fpa_dev_mutex_lock(void)
 {
@@ -397,9 +398,5 @@ ops_fpa_dev_unixctl_init(void)
 
     unixctl_command_register("fpa/dev/gt-show", "", 0, 0,
                              ops_fpa_dev_unixctl_group_table_show, NULL);
-    unixctl_command_register("fpa/sim/log-start", "", 0, 0,
-                             ops_fpa_start_simulation_log, NULL);
-    unixctl_command_register("fpa/sim/log-stop", "", 0, 0,
-                             ops_fpa_stop_simulation_log, NULL);
 }
 

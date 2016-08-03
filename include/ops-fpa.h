@@ -56,9 +56,11 @@ enum fpaFlowModFlags {
 #define FPA_INVALID_INTF_ID          0xffff 
 
 void ops_fpa_init();
-int ops_fpa_vlan_add(int pid, int vid, bool tag_in, bool tag_out);
-int ops_fpa_vlan_rm(int pid, int vid, bool tag_in);
-int ops_fpa_vlan_mod(bool add, int pid, int vid, enum port_vlan_mode mode);
+int ops_fpa_vlan_add(uint32_t switch_id, int pid, int vid, bool tag_in,
+                     bool tag_out);
+int ops_fpa_vlan_rm(uint32_t switch_id, int pid, int vid, bool tag_in);
+int ops_fpa_vlan_mod(bool add, uint32_t switch_id, int pid, int vid,
+                     enum port_vlan_mode mode);
 
 /* return string describing FPA status code */
 const char * ops_fpa_strerr(int err);

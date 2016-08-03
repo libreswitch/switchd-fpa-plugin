@@ -24,9 +24,6 @@
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_wrap);
 
-/* static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20); */
-
-extern FPA_STATUS fpaGroupTableDump(void);
 
 FPA_STATUS wrap_fpaLibFlowEntryAdd
 (
@@ -87,7 +84,6 @@ FPA_STATUS wrap_fpaLibGroupTableEntryAdd
     
     status = fpaLibGroupTableEntryAdd(switchId, groupEntryPtr);
     
-    /* fpaGroupTableDump(); */
     
     return status;
 }
@@ -102,7 +98,6 @@ FPA_STATUS wrap_fpaLibGroupTableEntryDelete
     
     status = fpaLibGroupTableEntryDelete(switchId, groupIdentifier);
     
-    fpaGroupTableDump();
     
     return status;
 }
@@ -117,7 +112,6 @@ FPA_STATUS wrap_fpaLibGroupEntryBucketAdd
     
     status = fpaLibGroupEntryBucketAdd(switchId, bucketPtr);
     
-    fpaGroupTableDump();
     
     return status;
 }
@@ -133,7 +127,6 @@ FPA_STATUS wrap_fpaLibGroupEntryBucketDelete
     
     status = fpaLibGroupEntryBucketDelete(switchId, groupIdentifier, bucketIndex);
     
-    fpaGroupTableDump();
     
     return status;
 }

@@ -26,13 +26,6 @@
 #include <unixctl.h>
 
 int ops_fpa_system(const char * format, ...);
-int ops_fpa_net_if_setup(const char *name, const struct ether_addr *mac);
-
-void ops_fpa_start_simulation_log(struct unixctl_conn *conn,
-                                  int argc OVS_UNUSED,
-                                  const char *argv[], void *aux OVS_UNUSED);
-void ops_fpa_stop_simulation_log(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                                 const char *argv[], void *aux OVS_UNUSED);
 
 #endif /* ops-fpa-util.h */
 

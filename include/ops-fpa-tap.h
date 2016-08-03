@@ -23,16 +23,16 @@
 #define OPS_FPA_TAP_H 1
 
 #include <net/ethernet.h>
-#include "ops-fpa.h"
 
 struct tap_info;
 
 struct tap_info *ops_fpa_tap_init(uint32_t switchId);
-int ops_fpa_tap_deinit(uint32_t switchId);
+void ops_fpa_tap_deinit(uint32_t switchId);
 
 int ops_fpa_tap_if_create(uint32_t switchId, uint32_t portNum, const char *name,
                           const struct ether_addr *mac, int* tap_fd);
 int ops_fpa_tap_if_delete(uint32_t switchId, int tap_fd);
+int ops_fpa_net_if_setup(const char *name, const struct ether_addr *mac);
 
 #endif /* ops-fpa-tap.h */
 

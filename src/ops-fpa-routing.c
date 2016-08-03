@@ -199,7 +199,7 @@ ops_fpa_enable_routing_interface(uint32_t switchId, uint32_t portNum, uint16_t v
 {
     struct fpa_l3_intf * l3_intf = NULL;
 
-    if (!ops_fpa_vlan_add(portNum, vlanId, false, false)) {
+    if (!ops_fpa_vlan_add(switchId, portNum, vlanId, false, false)) {
          l3_intf = ops_fpa_enable_routing_vlan(switchId, vlanId, mac);
          if (l3_intf)
          {
@@ -247,7 +247,8 @@ ops_fpa_disable_routing(struct fpa_l3_intf *l3_intf)
     ovs_assert(l3_intf);
 
     if (l3_intf->vlan_intf)
-        ops_fpa_vlan_rm(l3_intf->intf_id, l3_intf->vlan_id, false);
+        ops_fpa_vlan_rm(l3_intf->switchId, l3_intf->intf_id, l3_intf->vlan_id,
+                        false);
 
     status = fpa_vlan_unset_arp_bcast(l3_intf->switchId, l3_intf->vlan_id);
     if (status == FPA_OK)
