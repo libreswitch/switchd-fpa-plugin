@@ -56,13 +56,11 @@ init(void)
 void
 run(void)
 {
-    //FPA_TRACE_FN();
 }
 
 void
 wait(void)
 {
-    //FPA_TRACE_FN();
 }
 
 void
@@ -70,4 +68,3 @@ destroy(void)
 {
     FPA_TRACE_FN();
 }
-

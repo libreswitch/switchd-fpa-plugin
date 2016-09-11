@@ -19,11 +19,6 @@
  *           application code for the FPA library.
  */
 
-#include <errno.h>
-#include <ovs/util.h>
-#include <unixctl.h>
-
-#include "ops-fpa-dev.h"
 #include "ops-fpa-mac-learning.h"
 #include "ops-fpa-tap.h"
 #include "ops-fpa-util.h"
@@ -36,7 +31,6 @@ static struct fpa_dev *dev = NULL;
 
 static char *opsFpaFlowTablesName[FPA_FLOW_TABLE_MAX] = {"CONTROL_PKT", "VLAN", "TERMINATION", "PCL0", "PCL1", "PCL2", "L2_BRIDGING", "L3_UNICAST", "EPCL"};
 
-extern FPA_STATUS fpaGroupTableDump(void);
 
 static void ops_fpa_dev_unixctl_init(void);
 
@@ -60,14 +54,14 @@ ops_fpa_dev_mutex_unlock(void)
 struct fpa_dev *
 ops_fpa_dev_by_id(uint32_t switchId)
 {
-    /* TODO: Overwrite this function then will added support a lot of switches */
+    /* TODO: To be refactored for multiple device support */
     if (dev && dev->switchId == switchId) {
         return dev;
     }
     OVS_NOT_REACHED();
 }
 
-int 
+int
 ops_fpa_dev_init(uint32_t switchId, struct fpa_dev **fdev)
 {
     int err = 0;
@@ -76,11 +70,11 @@ ops_fpa_dev_init(uint32_t switchId, struct fpa_dev **fdev)
 
     ops_fpa_dev_mutex_lock();
 
-    /* TODO: check FPA device have only one instance */
+    /* Check FPA device has only one instance */
     if (dev) {
         VLOG_ERR("FPA device (%d) already exist", dev->switchId);
         dev->ref_cnt++;
-        err = 0;/*TODO: ? EEXIST; */
+        err = 0;
         goto error;
     }
 
@@ -136,11 +130,10 @@ ops_fpa_dev_deinit(uint32_t switchId)
 
         ops_fpa_tap_deinit(switchId);
 
-        /* TODO: check FPA device have only one instance */
         free(dev);
         dev = NULL;
 
-        VLOG_INFO("FPA device (%d) free was successful", switchId);
+        VLOG_INFO("FPA device (%d) freed successfully", switchId);
     }
 
     ops_fpa_dev_mutex_unlock();
@@ -162,7 +155,6 @@ struct tap_info *get_tap_info_by_switch_id(uint32_t switchId)
 /************************************************************************************/
 /* FLOW TABLE SHOW */
 /************************************************************************************/
-/* TODO: remove code to another place, maybe create new file as ops-fpa-ft.c */
 
 void ops_fpa_dev_unixctl_print_mac_address(struct ds *d_str, FPA_MAC_ADDRESS_STC mac)
 {
@@ -172,6 +164,8 @@ void ops_fpa_dev_unixctl_print_mac_address(struct ds *d_str, FPA_MAC_ADDRESS_STC
 void ops_fpa_dev_unixctl_print_table_title(struct ds *d_str, uint32_t flowTableNo)
 {
     ovs_assert(d_str);
+
+    ds_put_format(d_str, "Flow table: %s\n", opsFpaFlowTablesName[flowTableNo]);
 
     switch (flowTableNo) {
     case FPA_FLOW_TABLE_TYPE_CONTROL_PKT_E:
@@ -301,14 +295,16 @@ void ops_fpa_dev_unixctl_print_table_entry(struct ds *d_str, FPA_FLOW_TABLE_ENTR
             flowEntry->data.l2_bridging.clearActions,
             flowEntry->data.l2_bridging.gotoTableNo);
         break;
-/*  case FPA_FLOW_TABLE_TYPE_PCL0_E:
+#if 0 /* currently unsupported */
+    case FPA_FLOW_TABLE_TYPE_PCL0_E:
     case FPA_FLOW_TABLE_TYPE_PCL1_E:
     case FPA_FLOW_TABLE_TYPE_PCL2_E:
         fpaLibFlowTableIpclDump(flowTableNo);
         break;
     case FPA_FLOW_TABLE_TYPE_EPCL_E:
         fpaLibFlowTableEpclDump();
-        break;*/
+        break;
+#endif
     case FPA_FLOW_TABLE_TYPE_L3_UNICAST_E:
         ds_put_format(d_str, "|%16llx | %4d | %10d | %4d | 0x%08x | %4d |%15s/%2d |  %s   | %8x | %d | %4d |\n",
             (unsigned long long int)flowEntry->cookie,
@@ -349,25 +345,20 @@ static void
 ops_fpa_dev_unixctl_flow_table_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                                     const char *argv[], void *aux OVS_UNUSED)
 {
-    uint32_t switchId, flowTableNo;
-    struct ds d_str = DS_EMPTY_INITIALIZER;
-    FPA_STATUS status;
-    FPA_FLOW_TABLE_ENTRY_STC flowEntry;
-
-    switchId = atoi(argv[1]);
-    flowTableNo = atoi(argv[2]);
-
-    if (flowTableNo >= FPA_FLOW_TABLE_MAX) {
-        unixctl_command_reply_error(conn, "flowTableNo invalid");
+    int sid, tid;
+    if (ops_fpa_str2int(argv[1], &sid) || ops_fpa_str2int(argv[2], &tid) || tid >= FPA_FLOW_TABLE_MAX) {
+        unixctl_command_reply_error(conn, "invalid args");
         return;
     }
 
-    ops_fpa_dev_unixctl_print_table_title(&d_str, flowTableNo);
+    struct ds d_str = DS_EMPTY_INITIALIZER;
+    ops_fpa_dev_unixctl_print_table_title(&d_str, tid);
 
-    status = fpaLibFlowTableGetNext(switchId, flowTableNo, 1, &flowEntry);
-    while (status == FPA_OK) {
-        ops_fpa_dev_unixctl_print_table_entry(&d_str, &flowEntry);
-        status = fpaLibFlowTableGetNext(switchId, flowTableNo, 0, &flowEntry);
+    FPA_FLOW_TABLE_ENTRY_STC entry;
+    int err = fpaLibFlowTableGetNext(sid, tid, 1, &entry);
+    while (err == FPA_OK) {
+        ops_fpa_dev_unixctl_print_table_entry(&d_str, &entry);
+        err = fpaLibFlowTableGetNext(sid, tid, 0, &entry);
     }
 
     unixctl_command_reply(conn, ds_cstr(&d_str));
@@ -381,7 +372,6 @@ ops_fpa_dev_unixctl_group_table_show(struct unixctl_conn *conn, int argc OVS_UNU
     struct ds d_str = DS_EMPTY_INITIALIZER;
 
     ds_put_cstr(&d_str, "See group tables in switchd log file\n");
-    fpaGroupTableDump();
 
     unixctl_command_reply(conn, ds_cstr(&d_str));
     ds_destroy(&d_str);
@@ -399,4 +389,3 @@ ops_fpa_dev_unixctl_init(void)
     unixctl_command_register("fpa/dev/gt-show", "", 0, 0,
                              ops_fpa_dev_unixctl_group_table_show, NULL);
 }
-

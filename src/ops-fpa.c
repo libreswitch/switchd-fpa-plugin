@@ -14,8 +14,6 @@
  *    permissions and limitations under the License.
  */
 
-#include <stdlib.h>
-#include <vlan-bitmap.h>
 #include "ops-fpa.h"
 
 #define OPS_FPA_MAX_IP_PREFIX 32
@@ -79,41 +77,16 @@ ops_fpa_str_vlan_mode(int vlan_mode)
 }
 
 const char *
-ops_fpa_str_trunks(unsigned long *trunks)
+ops_fpa_str_raction(enum ofproto_route_action action)
 {
-    static char str[128];
-    if (trunks) {
-        str[0] = 0;
-        int vid = -1;
-        BITMAP_FOR_EACH_1(vid, VLAN_BITMAP_SIZE, trunks) {
-            sprintf(str + strlen(str), "%d,", vid);
-        }
-        if (strlen(str) > 0) {
-            str[strlen(str) - 1] = 0;
-        }
-    } else {
-        strcpy(str, "NULL");
+    switch (action) {
+        case OFPROTO_ROUTE_ADD: return "add";
+        case OFPROTO_ROUTE_DELETE: return "delete";
+        case OFPROTO_ROUTE_DELETE_NH: return "delete_nh";
+        default: break;
     }
-    return str;
+    return "invalid";
 }
-
-const char *
-ops_fpa_str_ports(ofp_port_t *ports, size_t size)
-{
-    static char str[128];
-    str[0] = 0;
-    if (size > 0) {
-        for (int i = 0; i < size; i++) {
-            sprintf(str + strlen(str), "%d,", ports[i]);
-        }
-        if (strlen(str) > 0) {
-            str[strlen(str) - 1] = 0;
-        }
-    }
-
-    return str;
-}
-
 
 int
 ops_fpa_str2int(const char *s, int *i)
@@ -138,14 +111,38 @@ ops_fpa_str2int(const char *s, int *i)
 char *
 ops_fpa_ip2str(in_addr_t ipAddr)
 {
-    static char str[16];
+    static char str[INET_ADDRSTRLEN];
     unsigned char *ip_addr_vec = (unsigned char*)&ipAddr;
 
     sprintf(str, "%d.%d.%d.%d", ip_addr_vec[0], ip_addr_vec[1], ip_addr_vec[2], ip_addr_vec[3]);
     return str;
 }
 
-uint32_t ops_fpa_ip4mask_to_prefix_len(in_addr_t ipMask)
+int
+ops_fpa_str2ip(char *ip_address, in_addr_t *addr, int *prefixlen)
+{
+    char tmp_ip_addr[strlen(ip_address) + 1];
+    strcpy(tmp_ip_addr, ip_address);
+    *prefixlen = OPS_FPA_MAX_IP_PREFIX;
+
+    char *p;
+    if ((p = strchr(tmp_ip_addr, '/'))) {
+        *p++ = '\0';
+        if (ops_fpa_str2int(p, prefixlen) || *prefixlen > OPS_FPA_MAX_IP_PREFIX) {
+            return 1;
+        }
+    }
+    /* ipv4 address in network order. */
+    *addr = inet_addr(tmp_ip_addr);
+    if (*addr == -1) {
+        return 1;
+    }
+
+    return 0;
+}
+
+uint32_t
+ops_fpa_ip4mask_to_prefix_len(in_addr_t ipMask)
 {
     uint32_t prefixLen;
 
@@ -157,7 +154,8 @@ uint32_t ops_fpa_ip4mask_to_prefix_len(in_addr_t ipMask)
     return prefixLen;
 }
 
-in_addr_t ops_fpa_prefix_len_to_ip4mask(uint32_t prefix)
+in_addr_t
+ops_fpa_prefix_len_to_ip4mask(uint32_t prefix)
 {
     in_addr_t ip = 0;
     uint32_t i;
@@ -168,4 +166,3 @@ in_addr_t ops_fpa_prefix_len_to_ip4mask(uint32_t prefix)
 
     return ip;
 }
-

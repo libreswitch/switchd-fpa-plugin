@@ -38,25 +38,22 @@ ops_fpa_stg_delete(int stg)
 int
 ops_fpa_stg_add_vlan(int stg, int vid)
 {
-    //FPA_TRACE_FN();
-    VLOG_INFO("ops_fpa_stg_add_vlan: stg=%d vid=%d", stg, vid);
+    VLOG_INFO("%s: stg=%d vid=%d", __func__, stg, vid);
     return 0;
 }
 
 int
 ops_fpa_stg_remove_vlan(int stg, int vid)
 {
-    //FPA_TRACE_FN();
-    VLOG_INFO("ops_fpa_stg_remove_vlan: stg=%d vid=%d", stg, vid);
+    VLOG_INFO("%s: stg=%d vid=%d", __func__, stg, vid);
     return 0;
 }
 
 int
 ops_fpa_stg_set_port_state(char *port_name, int stg, int stp_state, bool port_stp_set)
 {
-    //FPA_TRACE_FN();
-    VLOG_INFO("ops_fpa_stg_set_port_state: port_name=%s stg=%d stp_state=%d port_stp_set=%s",
-        port_name, stg, stp_state, port_stp_set ? "true" : "false"
+    VLOG_INFO("%s: port_name=%s stg=%d stp_state=%d port_stp_set=%s",
+        __func__, port_name, stg, stp_state, port_stp_set ? "true" : "false"
     );
     return 0;
 }
@@ -74,5 +71,3 @@ ops_fpa_stg_get_default(int *p_stg)
     FPA_TRACE_FN();
     return 0;
 }
-
-

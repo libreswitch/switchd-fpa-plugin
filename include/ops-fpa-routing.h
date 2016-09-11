@@ -12,13 +12,16 @@
  *
  *    See the Apache Version 2.0 License for specific language governing
  *    permissions and limitations under the License.
+ *
+ *  File: ops-fpa-routing.h
+ *
+ *  Purpose: This file contains OpenSwitch routing related
+ *           application code for the FPA SDK.
  */
 
-#ifndef OPS_FPA_ROUTING_H_
-#define OPS_FPA_ROUTING_H_
+#ifndef OPS_FPA_ROUTING_H
+#define OPS_FPA_ROUTING_H 1
 
-#include <vswitch-idl.h>
-#include <ofproto/ofproto-provider.h>
 #include "ops-fpa.h"
 
 struct fpa_l3_intf {
@@ -27,21 +30,12 @@ struct fpa_l3_intf {
     uint16_t vlan_id;
     struct eth_addr mac;
     bool vlan_intf;
+    unsigned long routes_count;
 };
 
-FPA_STATUS fpa_vlan_set_arp_bcast(uint32_t switchId, uint16_t vlanId);
-FPA_STATUS fpa_vlan_unset_arp_bcast(uint32_t switchId, uint16_t vlanId);
-
-FPA_STATUS fpa_set_arp_fwd(uint32_t switchId, uint16_t vlanId, struct eth_addr mac);
-FPA_STATUS fpa_unset_arp_fwd(uint32_t switchId, uint16_t vlanId, struct eth_addr mac);
-
-FPA_STATUS fpa_vlan_enable_unicast_routing(uint32_t switchId, uint16_t vlanId, struct eth_addr mac);
-FPA_STATUS fpa_vlan_disable_unicast_routing(uint32_t switchId, uint16_t vlanId, struct eth_addr mac);
-
-struct fpa_l3_intf *ops_fpa_enable_routing_interface(uint32_t switchId, uint32_t portNum, uint16_t vlanId, struct eth_addr mac);
-struct fpa_l3_intf *ops_fpa_enable_routing_vlan(uint32_t switchId, uint16_t vlanId, struct eth_addr mac);
+struct fpa_l3_intf *ops_fpa_enable_routing_interface(uint32_t switch_id, uint32_t port_num, uint16_t vlan_id, struct eth_addr mac);
+struct fpa_l3_intf *ops_fpa_enable_routing_vlan(uint32_t switch_id, uint16_t vlan_id, struct eth_addr mac);
 
 void ops_fpa_disable_routing(struct fpa_l3_intf *l3_intf);
 
-#endif /* OPS_FPA_ROUTING_H_ */
-
+#endif /* OPS_FPA_ROUTING_H */

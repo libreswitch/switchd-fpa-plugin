@@ -28,13 +28,10 @@ struct tap_info;
 
 /* FPA device is a software representation of Marvell switch device */
 struct fpa_dev {
-
     /* FPA device ID */
     uint32_t switchId;
-
     /* Times this devices was opened */
     uint32_t ref_cnt;
-
     /* Information about TAP interfaces */
     struct tap_info *tap_if_info;
 
@@ -50,5 +47,4 @@ void ops_fpa_dev_deinit(uint32_t switchId);
 void ops_fpa_dev_mutex_lock(void);
 void ops_fpa_dev_mutex_unlock(void);
 
-#endif /* ops-fpa-dev.h */
-
+#endif /* OPS_FPA_DEV_H */

@@ -5,7 +5,7 @@
  *    not use this file except in compliance with the License. You may obtain
  *    a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  *
- *    THIS CODE IS PROVIDED ON AN  *AS IS* BASIS, WITHOUT WARRANTIES OR
+ *    THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR
  *    CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT
  *    LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS
  *    FOR A PARTICULAR PURPOSE, MERCHANTABILITY OR NON-INFRINGEMENT.
@@ -22,10 +22,8 @@
 #ifndef OPS_FPA_UTIL_H
 #define OPS_FPA_UTIL_H 1
 
-#include <net/ethernet.h>
 #include <unixctl.h>
 
 int ops_fpa_system(const char * format, ...);
 
-#endif /* ops-fpa-util.h */
-
+#endif /* OPS_FPA_UTIL_H */

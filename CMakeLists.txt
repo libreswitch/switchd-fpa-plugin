@@ -18,7 +18,6 @@ set (SOURCES
     ${SRC_DIR}/ops-fpa-dev.c
     ${SRC_DIR}/ops-fpa-mac-learning.c
     ${SRC_DIR}/ops-fpa-tap.c
-    ${SRC_DIR}/ops-marvell-utils-resource.c
     ${SRC_DIR}/ops-fpa-route.c
     ${SRC_DIR}/ops-fpa-routing.c
     ${SRC_DIR}/ops-fpa-wrap.c
@@ -37,5 +36,5 @@ add_library (ovs_fpa_plugin SHARED ${SOURCES})
 target_link_libraries (ovs_fpa_plugin ${OVSCOMMON_LIBRARIES} ${FPA_LIBRARIES} pthread)
 
 install(TARGETS ovs_fpa_plugin
-	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/openvswitch/plugins
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/openvswitch/plugins
 )

@@ -33,4 +33,4 @@ int ops_fpa_stg_get_port_state(char *port_name, int stg, int *p_stp_state);
 
 int ops_fpa_stg_get_default(int *p_stg);
 
-#endif
+#endif /* OPS_FPA_STG_H */

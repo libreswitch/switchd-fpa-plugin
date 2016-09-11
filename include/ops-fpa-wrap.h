@@ -5,7 +5,7 @@
  *    not use this file except in compliance with the License. You may obtain
  *    a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  *
- *    THIS CODE IS PROVIDED ON AN  *AS IS* BASIS, WITHOUT WARRANTIES OR
+ *    THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR
  *    CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT
  *    LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS
  *    FOR A PARTICULAR PURPOSE, MERCHANTABILITY OR NON-INFRINGEMENT.
@@ -71,5 +71,11 @@ FPA_STATUS wrap_fpaLibGroupEntryBucketDelete
     IN   uint32_t   bucketIndex         /* if == -1 - delete all buckets */
 );
 
-#endif /* ops-fpa-wrap.h */
+FPA_STATUS wrap_fpaLibPortPropertiesSet
+(
+    IN  uint32_t                   switchId,
+    IN  uint32_t                   portNum,
+    IN  FPA_PORT_PROPERTIES_STC    *propertiesPtr
+);
 
+#endif /* OPS_FPA_WRAP_H */

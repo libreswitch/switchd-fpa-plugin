@@ -19,11 +19,9 @@
  *          for the FPA SDK.
  */
 
-#include <stdlib.h>
 #include <unistd.h>
 #include "hash.h"
 #include "util.h"
-#include <openvswitch/vlog.h>
 #include "plugin-extensions.h"
 #include "ops-fpa.h"
 #include "ops-fpa-ofproto.h"
@@ -38,6 +36,18 @@ VLOG_DEFINE_THIS_MODULE(ops_fpa_mac_learning);
 
 struct fpa_mac_learning* g_fpa_ml = NULL;
 static struct vlog_rate_limit ml_rl = VLOG_RATE_LIMIT_INIT(5, 20);
+
+int ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml,
+                                        FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
+    OVS_REQ_WRLOCK(ml->rwlock);
+
+int ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
+                                        uint16_t vlan, FPA_MAC_ADDRESS_STC macAddr)
+    OVS_REQ_WRLOCK(ml->rwlock);
+
+int ops_fpa_mac_learning_expire(struct fpa_mac_learning *ml,
+                               struct fpa_mac_entry *e)
+    OVS_REQ_WRLOCK(ml->rwlock);
 
 static uint32_t fpa_hash_fdb_entry(const FPA_EVENT_ADDRESS_MSG_STC *fdb_entry);
 static void *mac_learning_asic_events_handler(void *arg);
@@ -63,7 +73,7 @@ int
 ops_fpa_mac_learning_create(struct fpa_dev *dev, struct fpa_mac_learning **p_ml)
 {
     struct fpa_mac_learning *ml = NULL;
-    FPA_STATUS status = FPA_OK;
+    FPA_STATUS err = FPA_OK;
     int idx = 0;
     struct plugin_extension_interface *extension = NULL;
 
@@ -77,7 +87,7 @@ ops_fpa_mac_learning_create(struct fpa_dev *dev, struct fpa_mac_learning **p_ml)
 
     ovs_refcount_init(&ml->ref_cnt);
     ovs_rwlock_init(&ml->rwlock);
-    latch_init(&ml->exit_latch);   
+    latch_init(&ml->exit_latch);
     ml->plugin_interface = NULL;
     ml->curr_mlearn_table_in_use = 0;
 
@@ -98,9 +108,9 @@ ops_fpa_mac_learning_create(struct fpa_dev *dev, struct fpa_mac_learning **p_ml)
     }
 
     /* Configure FDB aging time */
-    status = fpaLibSwitchAgingTimeoutSet(ml->dev->switchId, ml->idle_time);
-    if (status != FPA_OK) {
-        VLOG_ERR("Failed to set aging time. Status: %s", ops_fpa_strerr(status));
+    err = fpaLibSwitchAgingTimeoutSet(ml->dev->switchId, ml->idle_time);
+    if (err != FPA_OK) {
+        VLOG_ERR("Failed to set aging time. Status: %s", ops_fpa_strerr(err));
         return EPERM;
     }
 
@@ -110,11 +120,9 @@ ops_fpa_mac_learning_create(struct fpa_dev *dev, struct fpa_mac_learning **p_ml)
                                       mac_learning_asic_events_handler, ml);
     VLOG_INFO("FDB events processing thread started");
 
-    status = fpaLibSwitchSrcMacLearningSet(ml->dev->switchId, FPA_SRCMAC_LEARNING_AUTO_E);
-    if (status != FPA_OK) {
-        /* TODO: abort can be changed with some log if ofproto init fail 
-         *shouldn't cause crash of OVS */
-        VLOG_ERR("Failed to set ASIC mac learning mode. Status: %s", ops_fpa_strerr(status));
+    err = fpaLibSwitchSrcMacLearningSet(ml->dev->switchId, FPA_SRCMAC_LEARNING_AUTO_E);
+    if (err != FPA_OK) {
+        VLOG_ERR("Failed to set ASIC mac learning mode. Status: %s", ops_fpa_strerr(err));
         return EPERM;
     }
 
@@ -147,11 +155,11 @@ int
 ops_fpa_mac_learning_get_idle_time(struct fpa_mac_learning *ml,
                                   unsigned int *idle_time)
 {
-    FPA_STATUS status = FPA_OK;
+    FPA_STATUS err = FPA_OK;
 
-    status = fpaLibSwitchAgingTimeoutGet(ml->dev->switchId, idle_time);
-    if (status != FPA_OK) {
-        VLOG_ERR("Failed to get aging time. Status: %s", ops_fpa_strerr(status));
+    err = fpaLibSwitchAgingTimeoutGet(ml->dev->switchId, idle_time);
+    if (err != FPA_OK) {
+        VLOG_ERR("Failed to get aging time. Status: %s", ops_fpa_strerr(err));
         return EPERM;
     }
 
@@ -163,13 +171,13 @@ int
 ops_fpa_mac_learning_set_idle_time(struct fpa_mac_learning *ml,
                                   unsigned int idle_time)
 {
-    FPA_STATUS status = FPA_OK;
+    FPA_STATUS err = FPA_OK;
 
     idle_time = normalize_idle_time(idle_time);
 
-    status = fpaLibSwitchAgingTimeoutSet(ml->dev->switchId, idle_time);
-    if (status != FPA_OK) {
-        VLOG_ERR("Failed to set aging time. Status: %s", ops_fpa_strerr(status));
+    err = fpaLibSwitchAgingTimeoutSet(ml->dev->switchId, idle_time);
+    if (err != FPA_OK) {
+        VLOG_ERR("Failed to set aging time. Status: %s", ops_fpa_strerr(err));
         return EPERM;
     }
 
@@ -190,7 +198,7 @@ ops_fpa_mac_learning_set_max_entries(struct fpa_mac_learning *ml,
 }
 
 /* Returns true if 'src_mac' may be learned on 'vlan' for 'ml'.
- * Returns false if src_mac is not valid for learning, or if 'vlan' is 
+ * Returns false if src_mac is not valid for learning, or if 'vlan' is
  * configured on 'ml' to flood all packets. */
 bool
 ops_fpa_mac_learning_may_learn(const struct fpa_mac_learning *ml,
@@ -200,7 +208,8 @@ ops_fpa_mac_learning_may_learn(const struct fpa_mac_learning *ml,
 
     ovs_assert(ml);
 
-/*    ovs_rwlock_rdlock(&ml->dev->vlan_mgr->rwlock);
+    /* FPA does not support disabling MAC learning on VLAN. */
+    /*ovs_rwlock_rdlock(&ml->dev->vlan_mgr->rwlock);
     is_learning = ops_fpa_vlan_is_learning(ml->dev->vlan_mgr, vlan);
     ovs_rwlock_unlock(&ml->dev->vlan_mgr->rwlock);*/
 
@@ -214,7 +223,7 @@ int
 ops_fpa_mac_learning_insert(struct fpa_mac_learning *ml, struct fpa_mac_entry *e)
 {
     uint32_t index;
-    uint32_t reHashIndex = 0; /*TODO remove*/
+    uint32_t reHashIndex = 0;
 
     ovs_assert(ml);
     ovs_assert(e);
@@ -223,7 +232,7 @@ ops_fpa_mac_learning_insert(struct fpa_mac_learning *ml, struct fpa_mac_entry *e
         VLOG_WARN_RL(&ml_rl, "%s: Unable to insert entry for VLAN %d "
                              "and MAC: " FPA_ETH_ADDR_FMT
                              " to the software FDB table. The table is full",
-                     __FUNCTION__, e->fdb_entry.vid, 
+                     __func__, e->fdb_entry.vid,
                      FPA_ETH_ADDR_ARGS(e->fdb_entry.address));
         free(e);
         return EPERM;
@@ -267,12 +276,12 @@ ops_fpa_mac_learning_lookup(const struct fpa_mac_learning *ml,
 
     HMAP_FOR_EACH_WITH_HASH(e, hmap_node, hash, &ml->table)
     {
-        if (!memcmp(&e->fdb_entry.address, &fdb_entry->address, 
+        if (!memcmp(&e->fdb_entry.address, &fdb_entry->address,
                     sizeof(fdb_entry->address)) &&
             e->fdb_entry.vid == fdb_entry->vid) {
             return e;
-        }    
-    }    
+        }
+    }
 
     return NULL;
 }
@@ -302,7 +311,7 @@ ops_fpa_mac_learning_expire(struct fpa_mac_learning *ml, struct fpa_mac_entry *e
     ovs_assert(ml);
     ovs_assert(e);
 
-    /* FIXME add removing entry from HW */
+    /* FIXME add removing entry from HW when be supported by FPA */
 
     hmap_remove(&ml->table, &e->hmap_node);
 
@@ -335,7 +344,7 @@ ops_fpa_mac_learning_flush(struct fpa_mac_learning *ml)
     }
 }
 
-/* Installs entry into hardware FDB table and then in the software table. 
+/* Installs entry into hardware FDB table and then in the software table.
  * After that releases the memory allocated for the members of data. */
 int
 ops_fpa_mac_learning_learn(struct fpa_mac_learning *ml,
@@ -346,28 +355,32 @@ ops_fpa_mac_learning_learn(struct fpa_mac_learning *ml,
     ovs_assert(ml);
     ovs_assert(data);
 
-    if (!ops_fpa_mac_learning_may_learn(ml, data->address,
-                                       data->vid)) {
+    /* Check if the port is already created. */
+    if (!ops_fpa_get_ofport_by_pid(data->portNum)) {
+        VLOG_WARN_RL(&ml_rl, "%s: Port with pid %d has not been created yet."
+                             " Skipping.", __func__, data->portNum);
+        return EPERM;
+    }
+
+    /* Check if MAC learning on VLAN is not disabled. */
+    if (!ops_fpa_mac_learning_may_learn(ml, data->address, data->vid)) {
         VLOG_WARN_RL(&ml_rl, "%s: Either learning is disabled on the VLAN %u"
                              " or wrong MAC: "FPA_ETH_ADDR_FMT" has to be learnt."
                              " Skipping.",
-                     __FUNCTION__, data->vid,
-                     FPA_ETH_ADDR_ARGS(data->address));
+                     __func__, data->vid, FPA_ETH_ADDR_ARGS(data->address));
         return EPERM;
     }
 
     /* Add new entry to software FDB */
-    memcpy(&e->fdb_entry, data,
-           sizeof(e->fdb_entry));
+    memcpy(&e->fdb_entry, data, sizeof e->fdb_entry);
     e->port.p = NULL;
 
     return ops_fpa_mac_learning_insert(ml, e);
-
 }
 
 /* Removes entry from the software and hardware FDB tables using its index. */
 int
-ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml, 
+ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml,
                                   FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
 {
     struct fpa_mac_entry *e = NULL;
@@ -387,7 +400,7 @@ ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml,
  * VLAN and MAC. */
 int
 ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
-                                         uint16_t vlan, 
+                                         uint16_t vlan,
                                          FPA_MAC_ADDRESS_STC macAddr)
 {
     struct fpa_mac_entry *e = NULL;
@@ -402,7 +415,7 @@ ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
         VLOG_WARN_RL(&ml_rl, "%s: No entry with VLAN %d "
                              "and MAC: " FPA_ETH_ADDR_FMT
                              " found in FDB",
-                     __FUNCTION__, vlan,
+                     __func__, vlan,
                      FPA_ETH_ADDR_ARGS(macAddr));
         return EPERM;
     }
@@ -416,28 +429,28 @@ static void *
 mac_learning_asic_events_handler(void *arg)
 {
     struct fpa_mac_learning *ml = arg;
-    FPA_STATUS err;
+    FPA_STATUS ret;
     FPA_EVENT_ADDRESS_MSG_STC msg;
 
     ovs_assert(ml);
 
+    /* Assure that all ports are properly initialized. */
     sleep(ML_DELAY_STARTUP_TIME);
 
     /* Receiving and processing events loop. */
-/*TODO test
+/*TODO test exit logic
     while (!latch_is_set(&ml->exit_latch)) {*/
     while (1) {
-
-        memset(&msg, 0x0, sizeof(FPA_EVENT_ADDRESS_MSG_STC)); /*TODO: check if need */
-        err = fpaLibBridgingAuMsgGet(ml->dev->switchId, false, &msg);
-        if ((err != FPA_OK) && (err != FPA_NO_MORE)) {
-            VLOG_ERR_RL(&ml_rl, "%s: %s", __FUNCTION__, ops_fpa_strerr(err)); 
+        memset(&msg, 0x0, sizeof msg);
+        /* This function blocks until the message arrived. */
+        ret = fpaLibBridgingAuMsgGet(ml->dev->switchId, false, &msg);
+        if ((ret != FPA_OK) && (ret != FPA_NO_MORE)) {
+            VLOG_ERR_RL(&ml_rl, "%s: %s", __func__, ops_fpa_strerr(ret));
         }
-        else if (err == FPA_OK) {
-            /*struct fpa_ml_learning_data learning_data;*/
-            
-            VLOG_INFO("AuMsg: type:%d, port:%d, vid:%d, MAC "FPA_ETH_ADDR_FMT, msg.type, msg.portNum, msg.vid, 
-                      FPA_ETH_ADDR_ARGS(msg.address)); 
+        else if (ret == FPA_OK) {
+            VLOG_INFO("AuMsg: type:%d, port:%d, vid:%d, MAC:" FPA_ETH_ADDR_FMT,
+                      msg.type, msg.portNum, msg.vid,
+                      FPA_ETH_ADDR_ARGS(msg.address));
 
             switch (msg.type) {
             case FPA_EVENT_ADDRESS_UPDATE_NEW_E:
@@ -447,25 +460,25 @@ mac_learning_asic_events_handler(void *arg)
                 break;
 
             case FPA_EVENT_ADDRESS_UPDATE_AGED_E:
-                VLOG_INFO_RL(&ml_rl, "TODO aging message reseived");
+                ovs_rwlock_wrlock(&ml->rwlock);
                 ops_fpa_mac_learning_age_by_entry(ml, &msg);
+                ovs_rwlock_unlock(&ml->rwlock);
                 break;
 
             default:
-                VLOG_ERR_RL(&ml_rl, "%s: illegal msg.type: %d", __FUNCTION__, msg.type);
+                VLOG_ERR_RL(&ml_rl, "%s: illegal msg.type: %d", __func__,
+                            msg.type);
                 break;
             }
         }
         else {
-            VLOG_DBG_RL(&ml_rl, "%s: empty AuMsg queue", __FUNCTION__);
+            VLOG_DBG_RL(&ml_rl, "%s: empty AuMsg queue", __func__);
         }
 
-        /* TODO: another thread "event_thread" to be created for servicing all ML events: NA, aging,
-         * flushing interfaces/VLAN, static MAC.
+        /* TODO: another thread "event_thread" to be created for servicing all
+         * ML events: NA, aging, flushing interfaces/VLAN, static MAC.
          * Current thread will just send events to event_thread */
-
     }
-
     VLOG_INFO("FDB events processing thread finished");
 
     return NULL;
@@ -485,11 +498,11 @@ ops_fpa_mac_learning_dump_table(struct fpa_mac_learning *ml, struct ds *d_str)
         if (e) {
             char iface_name[PORT_NAME_SIZE];
 
-            snprintf(iface_name, PORT_NAME_SIZE, "%u", e->fdb_entry.portNum); /*TODO check if extra conversion needed */
+            snprintf(iface_name, PORT_NAME_SIZE, "%u", e->fdb_entry.portNum);
 
             ds_put_format(d_str, "%-8s %4d  "FPA_ETH_ADDR_FMT"  0x%lx\n",
                           iface_name,
-                          e->fdb_entry.vid, 
+                          e->fdb_entry.vid,
                           FPA_ETH_ADDR_ARGS(e->fdb_entry.address),
                           e->hmap_node.hash);
         }
@@ -533,15 +546,9 @@ ops_fpa_mac_learning_mlearn_entry_fill_data(struct fpa_dev *dev,
     entry->hw_unit = dev->switchId;
     entry->oper = event;
 
-    struct ofport_fpa *port = ops_fpa_get_ofport_by_pid(fdb_entry->portNum);
-    if (port) {
-        strncpy(entry->port_name, netdev_get_name(port->up.netdev), 
-                PORT_NAME_SIZE);
-    } else {
-        /* TODO: What should we do if there is no port with the pid? */
-        VLOG_ERR("Can't find a port with pid %d", fdb_entry->portNum);
-        snprintf(entry->port_name, PORT_NAME_SIZE, "%u", entry->port);
-    }
+    struct fpa_ofport *port = ops_fpa_get_ofport_by_pid(fdb_entry->portNum);
+    ovs_assert(port);
+    strncpy(entry->port_name, netdev_get_name(port->up.netdev), PORT_NAME_SIZE);
 }
 
 /* Adds the action entry in the mlearn_event_tables hmap.
@@ -572,7 +579,7 @@ ops_fpa_mac_learning_mlearn_action_add(struct fpa_mac_learning *ml,
     if (node) {
         /* Entry already exists - just fill it with new data. */
         e = CONTAINER_OF(node, struct mlearn_hmap_node, hmap_node);
-#if 0 /*TODO delete */
+#if 0 /* TODO check if needed */
         if (index != reHashIndex) {
             /* Rehasing occured - move an old entry to a new place. */
             if (actual_size < mhmap->buffer.size) {
@@ -637,7 +644,7 @@ ops_fpa_mac_learning_process_mlearn(struct fpa_mac_learning *ml)
         }
     } else {
         VLOG_ERR("%s: Unable to find mac learning plugin interface",
-                 __FUNCTION__);
+                 __func__);
     }
 }
 
@@ -662,9 +669,8 @@ ops_fpa_ml_hmap_get(struct mlearn_hmap **mhmap)
     ovs_assert(ml);
 
     if (!mhmap) {
-        VLOG_ERR("%s: Invalid argument", __FUNCTION__);
-        /*TODO enable when be ready 
-        ops_fpa_dev_free(dev);*/
+        VLOG_ERR("%s: Invalid argument", __func__);
+
         return EINVAL;
     }
 
@@ -675,9 +681,6 @@ ops_fpa_ml_hmap_get(struct mlearn_hmap **mhmap)
         *mhmap = NULL;
     }
     ovs_rwlock_unlock(&ml->rwlock);
-
-    /*TODO enable when be ready 
-    ops_fpa_dev_free(dev);*/
 
     return 0;
 }

@@ -15,119 +15,147 @@
  */
 
 #include "ops-fpa-vlan.h"
+#include "ops-fpa-route.h"
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_vlan);
 
-#define FPA_GROUP_ENTRY_PORT_MASK           0x0000FFFF
-#define FPA_GROUP_ENTRY_PORT_GET_MAC(id)    (id & FPA_GROUP_ENTRY_PORT_MASK)
+#define OPS_FPA_VLAN_COOKIE(pid, vid, tagged) ((tagged) ? ((uint64_t)(vid) << 32) | (pid) : (pid))
+#define OPS_FPA_GID_VLAN(id) (((id) & 0x0FFF0000) >> 16)
+#define OPS_FPA_GID_PORT(id) (((id) & 0x0000FFFF) >>  0)
 
-#define FPA_FLOW_VLAN_MASK_UNTAG 0x1000
-#define FPA_FLOW_VLAN_MASK_TAG   0x1FFF
-
-int
-ops_fpa_vlan_add(uint32_t switch_id, int pid, int vid, bool tag_in, bool tag_out)
+void
+ops_fpa_vlan_fetch(int sid, int pid, unsigned long *vmap)
 {
-    uint32_t gid;
-    FPA_STATUS err;
+    memset(vmap, 0, OPS_FPA_VMAP_BYTES);
 
     FPA_FLOW_TABLE_ENTRY_STC flow;
-    fpaLibFlowEntryInit(switch_id, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
-    flow.cookie = ops_fpa_vlan_cookie(pid, vid, tag_in);
+    for (int i = 1; !fpaLibFlowTableGetNext(sid, FPA_FLOW_TABLE_TYPE_VLAN_E, i, &flow); i++) {
+        if (pid == flow.data.vlan.inPort) {
+            int vid = flow.data.vlan.vlanId;
+            bool tagged = flow.data.vlan.vlanIdMask == FPA_FLOW_VLAN_MASK_TAG;
+            bitmap_set1(vmap, OPS_FPA_VIDX_INGRESS(vid, tagged));
+        }
+    }
+
+    FPA_GROUP_TABLE_ENTRY_STC group;
+    for (uint32_t gid = 0; !fpaLibGroupTableGetNext(sid, gid, &group); gid = group.groupIdentifier) {
+        if (pid == OPS_FPA_GID_PORT(group.groupIdentifier)) {
+            FPA_GROUP_BUCKET_ENTRY_STC bucket;
+            int err = fpaLibGroupEntryBucketGet(sid, group.groupIdentifier, 0, &bucket);
+            if (err) {
+                VLOG_ERR("%s: sid=%d pid=%d fpaLibGroupEntryBucketGet: %s", __func__, sid, pid, ops_fpa_strerr(err));
+                continue;
+            }
+
+            bool pop = bucket.data.l2Interface.popVlanTagAction;
+            int vid = OPS_FPA_GID_VLAN(group.groupIdentifier);
+
+            bitmap_set1(vmap, OPS_FPA_VIDX_EGRESS(vid, pop));
+        }
+    }
+}
+
+int
+ops_fpa_vlan_add(int sid, int pid, int vidx)
+{
+    int vid = OPS_FPA_VIDX_VID(vidx);
+    /* for egress vidx -> create group table entry */
+    if (OPS_FPA_VIDX_IS_EGRESS(vidx)) {
+        uint32_t dummy;
+        return ops_fpa_route_add_l2_group(sid, pid, vid, OPS_FPA_VIDX_ARG(vidx), &dummy);
+    }
+    /* for ingress vidx -> create VLAN table entry */
+    bool match_tagged = OPS_FPA_VIDX_ARG(vidx);
+
+    FPA_FLOW_TABLE_ENTRY_STC flow;
+    fpaLibFlowEntryInit(sid, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
+
+    flow.cookie = OPS_FPA_VLAN_COOKIE(pid, vid, match_tagged);
     flow.data.vlan.inPort = pid;
     flow.data.vlan.vlanId = vid;
-    flow.data.vlan.vlanIdMask = tag_in ? FPA_FLOW_VLAN_MASK_TAG : FPA_FLOW_VLAN_MASK_UNTAG;
-    flow.data.vlan.newTagVid = tag_in ? -1 : vid;
-    flow.data.vlan.newTagPcp = -1;
-    err = wrap_fpaLibFlowEntryAdd(switch_id, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
-    if (err) {
-        VLOG_ERR("fpaLibFlowEntryAdd: Status: %s\n"
-        		"vlan.inPort: %d, vlan.vlanId: %d",
-        		ops_fpa_strerr(err),
-        		flow.data.vlan.inPort, flow.data.vlan.vlanId);
-        return -1;
+    flow.data.vlan.vlanIdMask = match_tagged ? FPA_FLOW_VLAN_MASK_TAG : FPA_FLOW_VLAN_MASK_UNTAG;
+    flow.data.vlan.newTagVid = match_tagged ? FPA_FLOW_VLAN_IGNORE_VAL : vid;
+    flow.data.vlan.newTagPcp = FPA_FLOW_VLAN_IGNORE_VAL;
+
+    return fpaLibFlowEntryAdd(sid, FPA_FLOW_TABLE_TYPE_VLAN_E, &flow);
+}
+
+int
+ops_fpa_vlan_del(int sid, int pid, int vidx)
+{
+    int vid = OPS_FPA_VIDX_VID(vidx);
+    /* for egress vidx - delete group table entry */
+    if (OPS_FPA_VIDX_IS_EGRESS(vidx)) {
+        FPA_GROUP_ENTRY_IDENTIFIER_STC ident = {
+            .groupType = FPA_GROUP_L2_INTERFACE_E,
+            .portNum = pid,
+            .vlanId = vid
+        };
+        uint32_t gid;
+        fpaLibGroupIdentifierBuild(&ident, &gid);
+        return fpaLibGroupTableEntryDelete(sid, gid);
+    }
+    /* for ingress vidx -> delete VLAN table entry */
+    bool match_tagged = OPS_FPA_VIDX_ARG(vidx);
+    return fpaLibFlowTableCookieDelete(sid, FPA_FLOW_TABLE_TYPE_VLAN_E,
+        OPS_FPA_VLAN_COOKIE(pid, vid, match_tagged)
+    );
+}
+
+/* global internal vlans bitmap */
+static unsigned long internal_vlans[BITMAP_N_LONGS(VLAN_BITMAP_SIZE)] = {0};
+
+bool
+ops_fpa_vlan_internal(int vid)
+{
+    return bitmap_is_set(internal_vlans, vid);
+}
+
+int
+ops_fpa_vlan_add_internal(int sid, int pid, int vid)
+{
+    if (ops_fpa_vlan_add(sid, pid, OPS_FPA_VIDX_INGRESS(vid, false))) {
+        VLOG_ERR("%s: can't add ingress flow: sid=%d pid=%d vid=%d", __func__, sid, pid, vid);
+        return 1;
     }
 
-    FPA_GROUP_ENTRY_IDENTIFIER_STC ident = {
-        .groupType = FPA_GROUP_L2_INTERFACE_E,
-        .portNum = pid,
-        .vlanId = vid
-    };
-    err = fpaLibGroupIdentifierBuild(&ident, &gid);
-    if (err) {
-        VLOG_ERR("fpaLibGroupIdentifierBuild: Status: %s", ops_fpa_strerr(err));
-        return -1;
-    }
-
-    FPA_GROUP_TABLE_ENTRY_STC group = {
-        .groupIdentifier = gid,
-        .groupTypeSemantics = FPA_GROUP_INDIRECT
-    };
-    err = wrap_fpaLibGroupTableEntryAdd(switch_id, &group);
-    if (err) {
-        VLOG_ERR("fpaLibGroupTableEntryAdd: Status: %s", ops_fpa_strerr(err));
-        return -1;
-    }
-
-    FPA_GROUP_BUCKET_ENTRY_STC bucket = {
-        .groupIdentifier = gid,
-        .index = 0,
-        .type = FPA_GROUP_BUCKET_L2_INTERFACE_E,
-        .data.l2Interface = {
-            .outputPort = pid,
-            .popVlanTagAction = !tag_out
+    if (ops_fpa_vlan_add(sid, pid, OPS_FPA_VIDX_EGRESS(vid, false))) {
+        VLOG_ERR("%s: can't add egress flow: sid=%d pid=%d vid=%d", __func__, sid, pid, vid);
+        if (ops_fpa_vlan_del(sid, pid, OPS_FPA_VIDX_INGRESS(vid, false))) {
+            VLOG_ERR("%s: can't cleanup ingress flow: sid=%d pid=%d vid=%d", __func__, sid, pid, vid);
         }
-    };
-    err = wrap_fpaLibGroupEntryBucketAdd(switch_id, &bucket);
-    if (err) {
-        VLOG_ERR("fpaLibGroupEntryBucketAdd: Status: %s", ops_fpa_strerr(err));
-        return -1;
+        return 1;
     }
+
+    if(ops_fpa_vlan_internal(vid)) {
+        VLOG_ERR("%s: vid=%d is already internal", __func__, vid);
+        return 1;
+    }
+
+    bitmap_set1(internal_vlans, vid);
 
     return 0;
 }
 
 int
-ops_fpa_vlan_rm(uint32_t switch_id, int pid, int vid, bool tag_in)
+ops_fpa_vlan_del_internal(int sid, int pid, int vid)
 {
-    FPA_STATUS err = wrap_fpaLibFlowTableCookieDelete(switch_id,
-            FPA_FLOW_TABLE_TYPE_VLAN_E, ops_fpa_vlan_cookie(pid, vid, tag_in));
-    if (err) {
-        VLOG_ERR("fpaLibFlowTableCookieDelete: Status: %s",
-                 ops_fpa_strerr(err));
+    int err = 0;
+
+    if (ops_fpa_vlan_del(sid, pid, OPS_FPA_VIDX_INGRESS(vid, false))) {
+        VLOG_ERR("%s: can't remove ingress flow: sid=%d pid=%d vid=%d", __func__, sid, pid, vid);
+        err = 1;
+    }
+    if (ops_fpa_vlan_del(sid, pid, OPS_FPA_VIDX_EGRESS(vid, false))) {
+        VLOG_ERR("%s: can't remove egress flow: sid=%d pid=%d vid=%d", __func__, sid, pid, vid);
+        err = 1;
+    }
+    if(!ops_fpa_vlan_internal(vid)) {
+        VLOG_ERR("%s: vid=%d were not internal", __func__, vid);
+        err = 1;
     }
 
-    FPA_GROUP_ENTRY_IDENTIFIER_STC ident = {
-        .groupType = FPA_GROUP_L2_INTERFACE_E,
-        .portNum = pid,
-        .vlanId = vid
-    };
-    uint32_t gid;
-    err = fpaLibGroupIdentifierBuild(&ident, &gid);
-    if (err) {
-        VLOG_ERR("fpaLibGroupIdentifierBuild: Status: %s", ops_fpa_strerr(err));
-        return -1;
-    }
+    bitmap_set0(internal_vlans, vid);
 
-    err = wrap_fpaLibGroupTableEntryDelete(switch_id, gid);
-    if (err) {
-        VLOG_ERR("fpaLibGroupTableEntryDelete: Status: %s", ops_fpa_strerr(err));
-        return -1;
-    }
-
-    return 0;
-}
-
-int
-ops_fpa_vlan_mod(bool add, uint32_t switch_id, int pid, int vid,
-                 enum port_vlan_mode mode)
-{
-    if(pid != FPA_INVALID_INTF_ID) {
-        bool tag_in  = (mode == PORT_VLAN_TRUNK);
-        bool tag_out = (mode == PORT_VLAN_TRUNK)
-                || (mode == PORT_VLAN_NATIVE_TAGGED);
-
-        return add ? ops_fpa_vlan_add(switch_id, pid, vid, tag_in, tag_out)
-                : ops_fpa_vlan_rm(switch_id, pid, vid, tag_in);
-    }
-    return 0;
+    return err;
 }

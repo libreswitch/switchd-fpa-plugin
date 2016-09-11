@@ -5,7 +5,7 @@
  *    not use this file except in compliance with the License. You may obtain
  *    a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  *
- *    THIS CODE IS PROVIDED ON AN  *AS IS* BASIS, WITHOUT WARRANTIES OR
+ *    THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR
  *    CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT
  *    LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS
  *    FOR A PARTICULAR PURPOSE, MERCHANTABILITY OR NON-INFRINGEMENT.
@@ -37,7 +37,6 @@ VLOG_DEFINE_THIS_MODULE(fpa_util);
  * by calling system() function from standard library.
  * Returns after the command has been completed. */
 /*TODO to be removed*/
-
 int
 ops_fpa_system(const char * format, ...)
 {
@@ -79,4 +78,3 @@ ops_fpa_system(const char * format, ...)
     VLOG_ERR("Failed to execute \"%s\". RC=%d", cmd, ret);
     return EFAULT;
 }
-

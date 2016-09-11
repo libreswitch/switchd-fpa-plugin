@@ -77,7 +77,7 @@ struct fpa_mac_learning {
 
 typedef enum {
     OPS_FPA_ML_LEARNING_EVENT,
-    OPS_FPA_ML_AGING_EVENT, 
+    OPS_FPA_ML_AGING_EVENT,
     OPS_FPA_ML_PORT_DOWN_EVENT,
     OPS_FPA_ML_VLAN_REMOVED_EVENT
 } fpa_ml_event_type;
@@ -103,27 +103,6 @@ int ops_fpa_mac_learning_set_idle_time(struct fpa_mac_learning *ml,
                                       unsigned int idle_time)
     OVS_REQ_WRLOCK(ml->rwlock);
 
-int ops_fpa_mac_learning_age_by_entry(struct fpa_mac_learning *ml, 
-                                        FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
-    OVS_REQ_WRLOCK(ml->rwlock);
-
-int ops_fpa_mac_learning_age_by_vlan_and_mac(struct fpa_mac_learning *ml,
-                                        uint16_t vlan, FPA_MAC_ADDRESS_STC macAddr)
-    OVS_REQ_WRLOCK(ml->rwlock);
-
-struct fpa_mac_entry *ops_fpa_mac_learning_lookup(const struct fpa_mac_learning *ml,
-                           FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
-    OVS_REQ_RDLOCK(ml->rwlock);
-
-struct fpa_mac_entry *ops_fpa_mac_learning_lookup_by_vlan_and_mac(
-                                    const struct fpa_mac_learning *ml,
-                                    uint16_t vlan_id, FPA_MAC_ADDRESS_STC macAddr)
-    OVS_REQ_RDLOCK(ml->rwlock);
-
-int ops_fpa_mac_learning_expire(struct fpa_mac_learning *ml,
-                               struct fpa_mac_entry *e)
-    OVS_REQ_WRLOCK(ml->rwlock);
-
 void ops_fpa_mac_learning_flush(struct fpa_mac_learning *ml)
     OVS_REQ_WRLOCK(ml->rwlock);
 
@@ -134,4 +113,15 @@ void ops_fpa_mac_learning_on_mlearn_timer_expired(struct fpa_mac_learning *ml);
 
 int ops_fpa_ml_hmap_get(struct mlearn_hmap **mhmap);
 
-#endif /* ops-fpa-mac-learning.h */
+struct fpa_mac_entry *
+ops_fpa_mac_learning_lookup(const struct fpa_mac_learning *ml,
+                            FPA_EVENT_ADDRESS_MSG_STC *fdb_entry)
+    OVS_REQ_RDLOCK(ml->rwlock);
+
+struct fpa_mac_entry *
+ops_fpa_mac_learning_lookup_by_vlan_and_mac(const struct fpa_mac_learning *ml,
+                                            uint16_t vlan_id,
+                                            FPA_MAC_ADDRESS_STC macAddr)
+    OVS_REQ_RDLOCK(ml->rwlock);
+
+#endif /* OPS_FPA_MAC_LEARNING_H */

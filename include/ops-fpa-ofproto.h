@@ -14,34 +14,30 @@
  *    permissions and limitations under the License.
  */
 
-#ifndef OPS_FPA_OFPROTO_H_
-#define OPS_FPA_OFPROTO_H_
+#ifndef OPS_FPA_OFPROTO_H
+#define OPS_FPA_OFPROTO_H 1
 
 #include <vswitch-idl.h>
 #include <ofproto/ofproto-provider.h>
 #include "ops-fpa.h"
 #include "ops-fpa-routing.h"
+#include "ops-fpa-vlan.h"
 
-struct fpa_net_addr_t {
-    struct hmap_node addr_node;
+struct fpa_net_addr {
+    struct hmap_node node;
     int id;                     /* ID of host entry created on HW */
     char *address;              /* IPv4/IPv6 address */
 };
 
-struct fpa_l3_intf_t {
-    size_t l3_vrf;
-    bool vlan_intf;
-    int vlan_id;
-};
-
-struct ofproto_fpa {
+struct fpa_ofproto {
     struct hmap_node node;
     struct ofproto up;
 
     struct sset port_names;
 
     struct hmap bundles;
-    unsigned long vlans[BITMAP_N_LONGS(FPA_VLAN_MAX_COUNT)];
+     /* vlans in 'no shutdown' state */
+    unsigned long vlans[BITMAP_N_LONGS(VLAN_BITMAP_SIZE)];
 
     struct fpa_dev *dev;
 
@@ -53,42 +49,33 @@ struct ofproto_fpa {
     uint64_t change_seq;           /* Connectivity status changes. */
 };
 
-struct bundle_fpa {
+#define FPA_OFPROTO(PTR) CONTAINER_OF(PTR, struct fpa_ofproto, up)
+
+struct fpa_bundle {
     struct hmap_node node;
     void *aux;
-
     char *name;
-    enum port_vlan_mode vlan_mode;
-    int vlan;
-    unsigned long trunks[BITMAP_N_LONGS(FPA_VLAN_MAX_COUNT)];
 
     /* TODO: for LAG this needs to be a vector */
-    int intfId;             /* Interface ID of the bundle (port, bond, etc) */
-    ofp_port_t ofp_port;    /* OpenSwitch port ID */
+    int intf_id;             /* Interface ID of the bundle (port, bond, etc) */
 
-    /*bool is_lag;*/ //LAG not supported in M3
     struct fpa_l3_intf *l3_intf;
 
-    struct fpa_net_addr_t *ip4addr;
+    struct fpa_net_addr *ip4addr;
     struct hmap secondary_ip4addr; /* List of secondary IP address */
 };
 
-struct ofrule_fpa {
-    struct rule up;
-    FPA_FLOW_TABLE_ENTRY_STC entry;
-};
-
-struct ofport_fpa {
+struct fpa_ofport {
     struct hmap_node node;      /* In ports_by_pid map. */
     struct ofport up;
-    //int vid;
+    unsigned long vmap[OPS_FPA_VMAP_LONGS]; /* pending vlan's, not applied to asic */
 };
+
+#define FPA_OFPORT(PTR) CONTAINER_OF(PTR, struct fpa_ofport, up)
 
 struct port_iter {
     uint32_t bucket;
     uint32_t offset;
-    //struct ofproto_port port;
 };
 
-#endif /* OPS_FPA_OFPROTO_H_ */
-
+#endif /* OPS_FPA_OFPROTO_H */

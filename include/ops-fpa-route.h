@@ -12,32 +12,35 @@
  *
  *    See the Apache Version 2.0 License for specific language governing
  *    permissions and limitations under the License.
+ *
+ *  File: ops-fpa-route.h
+ *
+ *  Purpose: This file contains OpenSwitch route related
+ *           application code for the FPA SDK.
  */
-#ifndef OPS_FPA_ROUTE_H_
-#define OPS_FPA_ROUTE_H_
+
+#ifndef OPS_FPA_ROUTE_H
+#define OPS_FPA_ROUTE_H 1
 
 #include "ops-fpa.h"
-#include "ops-marvell-utils-resource.h"
 
-#define MARVELL_FPA_NH  1024
+int ops_fpa_route_add_l2_group(
+    int sid, int pid, int vid, bool pop_tag, uint32_t *group
+);
 
-FPA_STATUS ops_fpa_route_add_l2_group(uint32_t switchId, uint32_t port,
-                                    uint16_t vlan_id, uint32_t popVlanTagAction,
-                                    uint32_t *l2Group_ptr);
+int ops_fpa_route_add_l3_group(
+    int sid, uint32_t l2_group, int arp_index,int vid, int mtu,
+    struct eth_addr *src_mac, struct eth_addr *dst_mac, uint32_t *l3_group
+);
 
-FPA_STATUS ops_fpa_route_add_l3_group(uint32_t switchId, uint32_t l2Group,
-                                    uint32_t arp_index, uint16_t vlan_id,
-                                    uint32_t mtu,
-                                    FPA_MAC_ADDRESS_STC *srcMac_ptr,
-                                    FPA_MAC_ADDRESS_STC *dsMac_ptr,
-                                    uint32_t *l3Group_ptr);
+int ops_fpa_route_add_route(
+    int sid, uint32_t l3_group, in_addr_t ipv4, int mask_len
+);
 
-FPA_STATUS ops_fpa_route_add_route(uint32_t switchId, uint32_t l3Group,
-                                 in_addr_t dstIp4, uint32_t mask_len);
+int ops_fpa_route_add_route_trap(int sid, in_addr_t ipv4, int mask_len);
 
-void ops_fpa_route_del_route(uint32_t switchId, in_addr_t dstIp4,
-                           uint32_t mask_len);
+int ops_fpa_route_del_route(int sid, in_addr_t ipv4, int mask_len);
 
-void ops_fpa_route_del_group(uint32_t switchId, uint32_t group);
+int ops_fpa_route_del_group(int sid, uint32_t group);
 
-#endif /* OPS_FPA_ROUTE_H_ */
+#endif /* OPS_FPA_ROUTE_H */

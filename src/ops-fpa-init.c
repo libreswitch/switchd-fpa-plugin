@@ -15,7 +15,6 @@
  */
 
 #include <unistd.h>
-#include "ops-fpa.h"
 #include "ops-fpa-route.h"
 
 VLOG_DEFINE_THIS_MODULE(ops_fpa_init);
@@ -26,22 +25,24 @@ extern char **environ;
 static void *
 ops_fpa_main_start(void *arg)
 {
-    FPA_TRACE_FN();
     char *argv[] = {
         "switchd",
         "-i",
         "/opt/fpa/wm/bobcat3_A0_pss_wm.ini",
         NULL
     };
-    fpa_main(sizeof(argv)/sizeof(argv[0]) - 1, argv, environ);
-    VLOG_INFO("fpa_main thread exited");
+
+    FPA_TRACE_FN();
+
+    int rc = fpa_main(sizeof(argv)/sizeof(argv[0]) - 1, argv, environ);
+    VLOG_INFO("Main FPA thread exited with code %d", rc);
+
     return NULL;
 }
 
 void
 ops_fpa_init()
 {
-    FPA_STATUS status;
     FPA_TRACE_FN();
     ovs_thread_create("fpa_main", &ops_fpa_main_start, NULL);
     while (fpa_init_done != true) {
@@ -51,10 +52,9 @@ ops_fpa_init()
     /* fpa_init_done means fpa_init_almost_done */
     usleep(2000000);
 
-    status = fpaWrapInitialize();
-    if(FPA_OK != status) {
-        ovs_abort(EAGAIN, "Error. WrapInitialize returned error code. Status: %s", ops_fpa_strerr(status));
+    int err = fpaWrapInitialize();
+    if (err) {
+        ovs_abort(EAGAIN, "fpaWrapInitialize failed: %s", ops_fpa_strerr(err));
     }
     system("touch /var/run/fpa-sim-init.done");
 }
-
